@@ -21,13 +21,15 @@ sub get_tag()
         # fall through to use config.h?  it is always nice to know if we are
         # working on a tag or branch.
         my $verfile = new IO::File;
-        if (!$verfile->open("config.h")) {
+        if (!$verfile->open("autoMakefile")) {
           return "UNKNOWN";
         }
         while(defined($line = <$verfile>)) {
-            $line =~ /\#define VERSION "(.*)"/;
-            if ($1) {
-                $tag = $1;
+            if ($line =~ /^AC_LUSTRE_VERSION_STRING = (.*)/) {
+                $tag = "$1";
+            }
+            if ($line =~ /^THIRD_PARTY_VERSION = (.*)/ && $1 ne "") {
+                $tag = "$tag-$1";
                 last;
             }
         }

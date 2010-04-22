@@ -95,7 +95,15 @@ AC_SUBST(modulenetdir)
 
 # ------------ RELEASE --------------------------------
 AC_MSG_CHECKING([for Lustre release])
-RELEASE="`echo ${LINUXRELEASE} | tr '-' '_'`_`date +%Y%m%d%H%M`"
+AC_ARG_WITH([release],
+	AC_HELP_STRING([--with-release=string],
+		       [set the release string (default=$kvers_YYYYMMDDhhmm)]),
+	[RELEASE=$withval],
+	RELEASE=""
+	if test -n "$THIRD_PARTY_VERSION"; then
+		RELEASE="${THIRD_PARTY_VERSION}_"
+	fi
+	RELEASE="$RELEASE`echo ${LINUXRELEASE} | tr '-' '_'`_`date +%Y%m%d%H%M`")
 AC_MSG_RESULT($RELEASE)
 AC_SUBST(RELEASE)
 
