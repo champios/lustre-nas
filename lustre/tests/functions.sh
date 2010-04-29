@@ -30,7 +30,7 @@ mpi_run () {
     local mpilog=$TMP/mpi.log
     local rc
 
-    if [ "$MPI_USER" != root -a $mpirun ]; then
+    if [ "$MPI_USER" != root -a "$mpirun" ]; then
         echo "+ chmod 0777 $MOUNT"
         chmod 0777 $MOUNT
         command="su $MPI_USER sh -c \"$command \""
