@@ -12,6 +12,10 @@
 	* The async journal commit feature (bug 19128) and the cancel
 	  lock before replay feature (bug 16774) are disabled by default.
 
+Severity   : normal
+Bugzilla   : 22755
+Description: Don't leak grant space if the write failed with quota exceeded.
+
 Severity   : enhancement
 Bugzilla   : 21632
 Description: Update RHEL5.4 kernel to 2.6.18-164.11.1.el5.
