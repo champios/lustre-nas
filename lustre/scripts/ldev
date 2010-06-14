@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# ldev - parser for /etc/ldev.conf
+# ldev - parser for /usr/local/etc/ldev.conf
 #
 use strict;
 use File::Basename;
@@ -70,7 +70,7 @@ sub parse_cmdline
     $conf{all} = 0;
     $conf{local} = 0;
     $conf{foreign} = 0;
-    $conf{config} = "/etc/ldev.conf";
+    $conf{config} = "/usr/local/etc/ldev.conf";
     $conf{nidsfile} = "/etc/nids";
     $conf{hostname} = `uname -n`; chomp $conf{hostname};
     $conf{device} = "";
