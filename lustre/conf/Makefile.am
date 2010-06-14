@@ -44,7 +44,7 @@ noinst_DATA = top.ldif lustre2ldif.xsl
 endif
 
 sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre
+# sysconfig_DATA = lustre
 
 sysconf_DATA = ldev.conf
 
