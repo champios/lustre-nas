@@ -293,6 +293,7 @@ check_cur_qunit(struct obd_device *obd,
                 pending_write = lqs->lqs_bwrite_pending;
                 record   = lqs->lqs_blk_rec;
                 LASSERT(!(qunit_sz % QUOTABLOCK_SIZE));
+                LASSERT(tune_sz < qunit_sz);
         } else {
                 /* we didn't need change inode qunit size now */
                 qunit_sz = lqs->lqs_iunit_sz;

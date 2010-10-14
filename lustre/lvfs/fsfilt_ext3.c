@@ -1535,8 +1535,22 @@ static int fsfilt_ext3_quotactl(struct super_block *sb,
                 if (!qcop->get_dqblk)
                         GOTO(out, rc = -ENOSYS);
                 rc = qcop->get_dqblk(sb, oqc->qc_type, oqc->qc_id, dqblk);
-                if (!rc)
-                        dqblk->dqb_valid = QIF_LIMITS | QIF_USAGE;
+                if (!rc) {
+                        __u64 limit = ((__u64)(EXT3_SB(sb)->s_groups_count) *
+                                       (__u64)(EXT3_SB(sb)->s_blocks_per_group)) <<
+                                       sb->s_blocksize_bits;
+
+                        if (dqblk->dqb_curspace > limit) {
+                                CERROR("get_dqblk returned wrong usage for "
+                                       "id %u, type %d, curspace %llu > %llu\n",
+                                       oqc->qc_id, oqc->qc_type,
+                                       (unsigned long long)dqblk->dqb_curspace,
+                                       (unsigned long long)limit);
+                                rc = -ERANGE;
+                        } else {
+                                dqblk->dqb_valid = QIF_LIMITS | QIF_USAGE;
+                        }
+                }
                 break;
         case Q_SYNC:
                 if (!sb->s_qcop->quota_sync)
