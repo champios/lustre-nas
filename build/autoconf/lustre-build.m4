@@ -286,6 +286,75 @@ AC_SUBST(LIBCFS_INCLUDE_DIR)
 ])
 
 #
+# LB_DEFINE_LDISKFS_OPTIONS
+#
+# Enable config options related to ldiskfs.  These are used both by ldiskfs
+# and lvfs (which includes ldiskfs headers.)
+#
+AC_DEFUN([LB_DEFINE_LDISKFS_OPTIONS],
+[
+	AC_DEFINE(CONFIG_LDISKFS_FS_MODULE, 1, [build ldiskfs as a module])
+	AC_DEFINE(CONFIG_LDISKFS_FS_XATTR, 1, [enable extended attributes for ldiskfs])
+	AC_DEFINE(CONFIG_LDISKFS_FS_POSIX_ACL, 1, [enable posix acls for ldiskfs])
+	AC_DEFINE(CONFIG_LDISKFS_FS_SECURITY, 1, [enable fs security for ldiskfs])
+	AC_DEFINE(CONFIG_LDISKFSDEV_FS_POSIX_ACL, 1, [enable posix acls for ldiskfs])
+	AC_DEFINE(CONFIG_LDISKFSDEV_FS_XATTR, 1, [enable extented attributes for ldiskfs])
+	AC_DEFINE(CONFIG_LDISKFSDEV_FS_SECURITY, 1, [enable fs security for ldiskfs])
+])
+
+#
+# LB_DEFINE_E2FSPROGS_NAMES
+#
+# Enable the use of alternate naming of ldiskfs-enabled e2fsprogs package.
+#
+AC_DEFUN([LB_DEFINE_E2FSPROGS_NAMES],
+[AC_ARG_WITH([ldiskfsprogs],
+        AC_HELP_STRING([--with-ldiskfsprogs],
+                       [use alternate names for ldiskfs-enabled e2fsprogs]),
+	[],[withval='no'])
+
+AC_MSG_CHECKING([whether to use alternate names for e2fsprogs])
+if test x$withval = xyes ; then
+	AC_DEFINE(HAVE_LDISKFSPROGS, 1, [enable use of ldiskfsprogs package])
+	E2FSPROGS="ldiskfsprogs"
+	MKE2FS="mkfs.ldiskfs"
+	DEBUGFS="debugfs.ldiskfs"
+	TUNE2FS="tunefs.ldiskfs"
+	E2LABEL="label.ldiskfs"
+	DUMPE2FS="dumpfs.ldiskfs"
+	E2FSCK="fsck.ldiskfs"
+	PFSCK="pfsck.ldiskfs"
+	AC_MSG_RESULT([enabled])
+else
+	E2FSPROGS="e2fsprogs"
+	MKE2FS="mke2fs"
+	DEBUGFS="debugfs"
+	TUNE2FS="tune2fs"
+	E2LABEL="e2label"
+	DUMPE2FS="dumpe2fs"
+	E2FSCK="e2fsck"
+	PFSCK="fsck"
+	AC_MSG_RESULT([disabled])
+fi
+	AC_DEFINE_UNQUOTED(E2FSPROGS, "$E2FSPROGS", [name of ldiskfs e2fsprogs package])
+	AC_SUBST([E2FSPROGS], [$E2FSPROGS])
+	AC_DEFINE_UNQUOTED(MKE2FS, "$MKE2FS", [name of ldiskfs mkfs program])
+	AC_SUBST([MKE2FS], [$MKE2FS])
+	AC_DEFINE_UNQUOTED(DEBUGFS, "$DEBUGFS", [name of ldiskfs debug program])
+	AC_SUBST([DEBUGFS], [$DEBUGFS])
+	AC_DEFINE_UNQUOTED(TUNE2FS, "$TUNE2FS", [name of ldiskfs tune program])
+	AC_SUBST([TUNE2FS], [$TUNE2FS])
+	AC_DEFINE_UNQUOTED(E2LABEL, "$E2LABEL", [name of ldiskfs label program])
+	AC_SUBST([E2LABEL], [$E2LABEL])
+	AC_DEFINE_UNQUOTED(DUMPE2FS,"$DUMPE2FS", [name of ldiskfs dump program])
+	AC_SUBST([DUMPE2FS], [$DUMPE2FS])
+	AC_DEFINE_UNQUOTED(E2FSCK, "$E2FSCK", [name of ldiskfs fsck program])
+	AC_SUBST([E2FSCK], [$E2FSCK])
+	AC_DEFINE_UNQUOTED(PFSCK, "$PFSCK", [name of parallel fsck program])
+	AC_SUBST([PFSCK], [$PFSCK])
+])
+
+#
 # LB_CONFIG_CRAY_XT3
 #
 # Enable Cray XT3 features
