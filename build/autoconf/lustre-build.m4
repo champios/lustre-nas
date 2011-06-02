@@ -29,6 +29,17 @@ AC_SUBST(lb_target_os)
 ])
 
 #
+# LB_3RD_PARTY_VERSION
+#
+AC_DEFUN([LB_THIRD_PARTY_VERSION],
+[AC_ARG_WITH([3rd-party-version],
+	AC_HELP_STRING([--with-3rd-party-version=string],
+		       [set a string in the BUILD_VERSION and RPM Release: (default is nothing)]),
+	[THIRD_PARTY_VERSION=$with_3rd_party_version],[])
+AC_SUBST(THIRD_PARTY_VERSION)
+])
+
+#
 # LB_CHECK_FILE
 #
 # Check for file existance even when cross compiling
@@ -583,7 +594,7 @@ AC_ARG_ENABLE([utils],
 			[disable building of Lustre utility programs]),
 	[],[enable_utils='yes'])
 AC_MSG_RESULT([$enable_utils])
-if test x$enable_utils = xyes ; then 
+if test x$enable_utils = xyes ; then
 	LB_CONFIG_INIT_SCRIPTS
 fi
 ])
@@ -606,6 +617,30 @@ AC_MSG_RESULT([$enable_tests])
 ])
 
 #
+# LB_CONFIG_DIST
+#
+# Just enough configure so that "make dist" is useful
+#
+# this simply re-adjusts some defaults, which of course can be overridden
+# on the configure line after the --for-dist option
+#
+AC_DEFUN([LB_CONFIG_DIST],
+[AC_MSG_CHECKING([whether to configure just enough for make dist])
+AC_ARG_ENABLE([dist],
+	AC_HELP_STRING([--enable-dist],
+			[only configure enough for make dist]),
+	[enable_dist='yes'],[enable_dist='no'])
+AC_MSG_RESULT([$enable_dist])
+if test x$enable_dist != xno; then
+	enable_modules='no'
+	enable_utils='no'
+        enable_liblustre='no'
+        enable_doc='no'
+        enable_tests='no'
+fi
+])
+
+#
 # LB_CONFIG_DOCS
 #
 # Build docs?
@@ -617,7 +652,7 @@ AC_ARG_ENABLE(doc,
 			[skip creation of pdf documentation]),
 	[
 		if test x$enable_doc = xyes ; then
-		    ENABLE_DOC=1	   
+		    ENABLE_DOC=1
 		else
 		    ENABLE_DOC=0
 		fi
@@ -817,6 +852,10 @@ AC_PACKAGE_TARNAME[.spec]
 AC_DEFUN([LB_CONFIGURE],
 [LB_CANONICAL_SYSTEM
 
+LB_THIRD_PARTY_VERSION
+
+LB_CONFIG_DIST
+
 LB_LIBCFS_DIR
 
 LB_INCLUDE_RULES
@@ -835,7 +874,7 @@ LB_CONFIG_UTILS
 LB_CONFIG_TESTS
 LC_CONFIG_CLIENT_SERVER
 
-# two macros for cmd3 
+# two macros for cmd3
 m4_ifdef([LC_CONFIG_SPLIT], [LC_CONFIG_SPLIT])
 LN_CONFIG_CDEBUG
 LC_QUOTA

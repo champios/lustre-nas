@@ -260,7 +260,22 @@ EOF
     fatal "$1" "$2"
 }
 
-# canonicalize a relative path
+# canonicalize a relative path to a file
+canon_filepath() {
+    local PATH="$1"
+
+    if [ ! -f "$PATH" ]; then
+        return 1
+    fi
+
+    local FILE=${PATH##*/}
+    local DIR=${PATH%/*}
+
+    echo $(canon_path "$DIR")/$FILE
+    return 0
+}
+
+# canonicalize a relative path to a dir
 canon_path() {
     local PATH="$1"
 
@@ -724,7 +739,7 @@ unpack_lustre() {
             fatal 1 "There was an error checking out Lustre/Portals/Build from CVS."
         echo "Creating lustre tarball..."
         sh autogen.sh || fatal 1 "There was an error running autogen.sh."
-        ./configure --disable-{modules,utils,liblustre,tests,doc} || \
+        ./configure --enable-dist || \
             fatal 1 "There was an error running ./configure to create makefiles."
         make dist || fatal 1 "There was an error running 'make dist'."
         LUSTRE=$PWD/lustre-*.tar.gz
@@ -787,44 +802,17 @@ build_lustre() {
         targets="--target $arch $targets"
     done
 
-    local confoptions="--with-linux=${linux}"
-    if $PATCHLESS; then
-        confoptions="--with-linux=${linux} --disable-server"
-    fi
-    if [ "$linuxobj" != "" ]; then
-        confoptions="$confoptions --with-linux-obj=${linuxobj}"
-    fi
+    local confoptions=""
 
-    ./configure $confoptions ${CONFIGURE_FLAGS} 2>&1
-    if [ "$?" != "0" ]; then
-        local saved_config="../config.log.$(date +%s)"
-        cp config.log $saved_config
-        chmod a+r $saved_config
-        echo "Saved config.log is at $saved_config"
-        cat /proc/mounts
-        ls -l /proc/$$
-        pwd
-        echo "config.log contents:"
-        cat config.log
-        popd
-        return 255
+    if $PATCHLESS; then
+        confoptions="$confoptions --disable-server"
     fi
 
     gen_lustre_version
 
-    # hack. Somebody move build/lustre.spec to lustre.spec for b1_6
-    local lustre_spec
-    [ -f lustre.spec ] && lustre_spec=lustre.spec
-    [ -f build/lustre.spec ] && lustre_spec=build/lustre.spec
-
-    [ -f "$lustre_spec" ] && sed \
-        -e "s^Release: .*$^Release: $LUSTRE_EXTRA_VERSION^" \
-        < $lustre_spec \
-        > ../lustre.spec
-
-    local rpmbuildopt='-bb'
+    local rpmbuildopt='-tb'
     if $NORPM; then
-        rpmbuildopt='-bc'
+        rpmbuildopt='-tc'
         echo NORPM mode. Only compiling.
     fi
 
@@ -842,35 +830,44 @@ build_lustre() {
         lustre_tests="no"
     fi
 
-    $RPMBUILD $targets $rpmbuildopt ../lustre.spec \
+    $RPMBUILD $targets $rpmbuildopt "$LUSTRE" \
         ${is_patchless:+--define "lustre_name lustre-client"} \
         ${lustre_tests:+--define "build_lustre_tests 0"} \
         ${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
         --define "configure_args $confoptions ${CONFIGURE_FLAGS}" \
+        --define "kdir $linux" \
+        ${linuxobj:+--define "kobjdir $linuxobj"} \
+        --define "release $LUSTRE_EXTRA_VERSION" \
         --define "_tmppath $TMPDIR" \
         --define "_topdir $TOPDIR" 2>&1 || \
         fatal 1 "Error building rpms for $BUILD_ARCHS."
 
     popd >/dev/null
+
     ( $(skeep_ldiskfs_rpm $TAG) ) && return
 
     pushd lustre/ldiskfs || return 255
-    make dist 2>&1
-    if [ "$?" != "0" ]; then
+
+    if !  ./configure --enable-dist; then
+        echo "failed to configure in ldiskfs"
+        return 255
+    fi
+
+    if ! make dist 2>&1; then
         popd
         return 255
     fi
-    cp lustre-ldiskfs*.tar.gz $TOPDIR/SOURCES
+
+    cp lustre-ldiskfs*.tar.gz $TOPDIR/SOURCES || \
+        fatal 1 "Could not copy lustre-ldiskfs*.tar.gz to $TOPDIR/SOURCES"
 
     gen_lustre_version
 
-    local ldiskfs_spec=lustre-ldiskfs.spec
-    [ -f "$ldiskfs_spec" ] && sed \
-    -e "s^Release: .*$^Release: $LUSTRE_EXTRA_VERSION^" \
-    < $ldiskfs_spec \
-    > ../lustre-ldiskfs.spec
-
-    if ! $RPMBUILD $targets $rpmbuildopt ../lustre-ldiskfs.spec \
+    if ! $RPMBUILD $targets $rpmbuildopt lustre-ldiskfs*.tar.gz \
+        --define "configure_args $confoptions ${CONFIGURE_FLAGS}" \
+        --define "kdir $linux" \
+        ${linuxobj:+--define "kobjdir $linuxobj"} \
+        --define "release $LUSTRE_EXTRA_VERSION" \
         --define "_tmppath /var/tmp" \
         --define "_topdir $TOPDIR" 2>&1; then
         popd
@@ -878,7 +875,11 @@ build_lustre() {
     fi
 
     if $DO_SRC; then
-        if ! $RPMBUILD -bs ../lustre-ldiskfs.spec \
+        if ! $RPMBUILD -ts lustre-ldiskfs*.tar.gz \
+            --define "configure_args $confoptions ${CONFIGURE_FLAGS}" \
+            --define "kdir $linux" \
+            ${linuxobj:+--define "kobjdir $linuxobj"} \
+            --define "release $LUSTRE_EXTRA_VERSION" \
             --define "_tmppath /var/tmp" \
             --define "_topdir $TOPDIR" 2>&1; then
             popd
@@ -1905,7 +1906,9 @@ while [ "$1" ]; do
             shift 2
             ;;
         --lustre)
-            LUSTRE=$2
+            if ! LUSTRE=$(canon_filepath "$2"); then
+                fatal 1 "Could not determine the canonical location of $2"
+            fi
             shift 2
             ;;
         --nodownload)
