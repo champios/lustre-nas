@@ -46,17 +46,17 @@ init_SCRIPTS = lustre lnet
 hadir = $(sysconfdir)/ha.d/resource.d
 ha_SCRIPTS = Lustre
 
-noinst_SCRIPTS = $(genscripts) $(sbinscripts) lustre_req_history lfs_migrate
-sbin_SCRIPTS = lhbadm ldev
+noinst_SCRIPTS = lustre_req_history lfs_migrate
+sbin_SCRIPTS = $(genscripts) $(sbinscripts) lhbadm ldev
 
 EXTRA_DIST = license-status maketags.sh version_tag.pl lc_common \
 	     $(addsuffix .in,$(genscripts)) lc_mon $(sbinscripts) \
 	     $(bin_SCRIPTS) tree_status.pl lustre lnet lustre_req_history \
-	     lhbadm haconfig lustrefs ldev Lustre
+	     lhbadm haconfig lustrefs $(ha_SCRIPTS) ldev
 
 scriptlibdir = @libexecdir@/@PACKAGE@
 scriptlib_SCRIPTS = haconfig
-noinst_DATA = lc_common
+scriptlib_DATA = lc_common
 
 CLEANFILES = $(genscripts)
 

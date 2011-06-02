@@ -17,8 +17,10 @@ EXTRA_PROGRAMS = wirecheck
 rootsbin_PROGRAMS = mount.lustre
 sbin_PROGRAMS = mkfs.lustre tunefs.lustre lctl \
 	l_getgroups llverfs llverdev llog_reader ll_recover_lost_found_objs \
-	lshowmount ll_decode_filter_fid
-noinst_PROGRAMS += wiretest lr_reader ltrack_stats
+	lr_reader lshowmount ll_decode_filter_fid
+sbin_PROGRAMS += lpurge
+noinst_PROGRAMS += wiretest ltrack_stats
+
 if LIBPTHREAD
 noinst_PROGRAMS += loadgen
 endif
