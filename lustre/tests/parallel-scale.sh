@@ -216,7 +216,7 @@ test_metabench() {
         $SRUN $SRUN_OPTIONS -D $testdir -w $clients -N $num_clients \
             -n $((num_clients * mbench_THREADS)) -p $SRUN_PARTITION -- $cmd
     else
-        mpi_run -np $((num_clients * $mbench_THREADS)) -machinefile ${MACHINEFILE} $cmd
+        mpi_run -np $((num_clients * $mbench_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
     fi
 
     local rc=$?
@@ -257,7 +257,7 @@ test_simul() {
         $SRUN $SRUN_OPTIONS -D $testdir -w $clients -N $num_clients \
             -n $((num_clients * simul_THREADS)) -p $SRUN_PARTITION -- $cmd
     else
-        mpi_run -np $((num_clients * simul_THREADS)) -machinefile ${MACHINEFILE} $cmd
+        mpi_run -np $((num_clients * $simul_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
     fi
 
     local rc=$?
@@ -426,7 +426,7 @@ test_ior() {
         $SRUN $SRUN_OPTIONS -D $testdir -w $clients -N $num_clients \
             -n $((num_clients * ior_THREADS)) -p $SRUN_PARTITION -- $cmd
     else
-        mpi_run -np $((num_clients * $ior_THREADS)) -machinefile ${MACHINEFILE} $cmd
+        mpi_run -np $((num_clients * $ior_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
     fi
 
     local rc=$?
@@ -514,7 +514,7 @@ test_cascading_rw() {
     local cmd="$CASC_RW -g -d $testdir -n $casc_REP"
 
     echo "+ $cmd"
-    mpi_run -np $((num_clients * $casc_THREADS)) -machinefile ${MACHINEFILE} $cmd
+    mpi_run -np $((num_clients * $casc_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -551,7 +551,7 @@ test_write_append_truncate() {
     local cmd="write_append_truncate -n $write_REP $file"
 
     echo "+ $cmd"
-    mpi_run -np $((num_clients * $write_THREADS)) -machinefile ${MACHINEFILE} $cmd
+    mpi_run -np $((num_clients * $write_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -583,7 +583,7 @@ test_write_disjoint() {
     local cmd="$WRITE_DISJOINT -f $testdir/file -n $wdisjoint_REP"
 
     echo "+ $cmd"
-    mpi_run -np $((num_clients * $wdisjoint_THREADS)) -machinefile ${MACHINEFILE} $cmd
+    mpi_run -np $((num_clients * $wdisjoint_THREADS)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -620,7 +620,7 @@ test_parallel_grouplock() {
         local cmd="$PARALLEL_GROUPLOCK -g -v -d $testdir $subtest"
         echo "+ $cmd"
 
-        mpi_run -np $parallel_grouplock_MINTASKS -machinefile ${MACHINEFILE} $cmd
+        mpi_run -np $parallel_grouplock_MINTASKS $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
         local rc=$?
         if [ $rc != 0 ] ; then
             error_noexit "parallel_grouplock subtests $subtest failed! $rc"
@@ -692,7 +692,7 @@ test_statahead () {
     local cmd="${MDSRATE} ${MDSRATE_DEBUG} --mknod --dir $testdir --nfiles $num_files --filefmt 'f%%d'"
     echo "+ $cmd"
 
-    mpi_run -np $((num_clients * 32)) -machinefile ${MACHINEFILE} $cmd
+    mpi_run -np $((num_clients * 32)) $MACHINEFILE_OPTION ${MACHINEFILE} $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
