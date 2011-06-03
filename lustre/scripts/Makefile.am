@@ -46,12 +46,12 @@ genscripts = lustre_config lc_modprobe lc_net lc_hb lc_cluman lustre_createcsv \
 hadir = $(sysconfdir)/ha.d/resource.d
 ha_SCRIPTS = Lustre
 
-noinst_SCRIPTS = lustre_req_history lfs_migrate
+noinst_SCRIPTS = lustre_req_history 
 sbin_SCRIPTS = $(genscripts) $(sbinscripts) lhbadm ldev
 
 EXTRA_DIST = license-status maketags.sh version_tag.pl lc_common \
 	     $(addsuffix .in,$(genscripts)) lc_mon $(sbinscripts) \
-	     $(bin_SCRIPTS) tree_status.pl lustre lnet lustre_req_history \
+	     $(sbin_SCRIPTS) tree_status.pl lustre lnet lustre_req_history \
 	     lhbadm haconfig lustrefs $(ha_SCRIPTS) ldev
 
 scriptlibdir = @libexecdir@/@PACKAGE@
