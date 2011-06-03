@@ -19,6 +19,7 @@ flavor=$(uname -r | cut -f3 -d-)
 bash ./autogen.sh
 
 ./configure \
+  --enable-ext4 \
   --with-o2ib=/usr/src/ofa_kernel-$flavor \
   --with-linux=/usr/src/linux-${flavor}-${version} \
   --with-linux-config=/usr/src/linux-obj/x86_64/$flavor/.config \
