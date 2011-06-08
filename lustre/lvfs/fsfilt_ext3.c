@@ -2291,6 +2291,8 @@ static int fsfilt_ext3_dquot(struct lustre_dquot *dquot, int cmd)
 static int fsfilt_ext3_get_mblk(struct super_block *sb, int *count,
                                 struct inode *inode, int frags)
 {
+        int depth;
+
 #ifdef EXT3_EXT_HAS_NO_TREE
         struct ext3_ext_base *base = inode;
 #else
@@ -2301,7 +2303,11 @@ static int fsfilt_ext3_get_mblk(struct super_block *sb, int *count,
 #endif
         /* for an ost_write request, it needs <#fragments> * <tree depth + 1>
          * metablocks at maxium b=16542 */
-        *count = frags * (EXT_DEPTH(base) + 1) * EXT3_BLOCK_SIZE(sb);
+        depth = EXT_DEPTH(base);
+        *count = frags * (depth + 1) * EXT3_BLOCK_SIZE(sb);
+        if (*count < 0)
+                CWARN("%d < 0: ino %lu, depth %d (%d), frags %d\n",
+                      *count, inode->i_ino, depth, EXT_DEPTH(base), frags);
         return 0;
 }
 
