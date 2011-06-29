@@ -17,6 +17,10 @@ Bugzilla   : 21760
 Description: apps stuck in ptlrpc_check_set() during direct I/O
 Details    : start async bulk unregistering at the same time at reply unlink
 
+Severity   : normal
+Bugzilla   : 23352
+Description: Modified value of at_min is not taken into account
+
 -------------------------------------------------------------------------------
 
 2010-10-29 Oracle, Inc.
