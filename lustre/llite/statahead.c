@@ -465,10 +465,10 @@ static int do_statahead_interpret(struct ll_statahead_info *sai)
                 cfs_spin_lock(&ll_lookup_lock);
                 spin_lock(&dcache_lock);
                 lock_dentry(dentry);
-                __d_drop(dentry);
                 dentry->d_flags &= ~DCACHE_LUSTRE_INVALID;
                 unlock_dentry(dentry);
-                d_rehash_cond(dentry, 0);
+                if (d_unhashed(dentry))
+                        d_rehash_cond(dentry, 0);
                 spin_unlock(&dcache_lock);
                 cfs_spin_unlock(&ll_lookup_lock);
 
