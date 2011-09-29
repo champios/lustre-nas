@@ -18,6 +18,10 @@ See http://wiki.whamcloud.com/display/PUB/Changelog+1.8 for more information.
 
 See http://wiki.whamcloud.com/display/PUB/Changelog+1.8 for more information.
 
+Severity   : enhancement
+Jira       : LU-624
+Description: Kernel update [RHEL6.1 2.6.32-131.12.1.el6] (client only).
+
 -------------------------------------------------------------------------------
 
 2011-06-30 Whamcloud, Inc.
