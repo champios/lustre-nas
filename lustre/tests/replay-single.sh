@@ -1827,7 +1827,7 @@ test_70b () {
 	do_nodesv $clients "set -x; MISSING_DBENCH_OK=$MISSING_DBENCH_OK \
 		PATH=:$PATH:$LUSTRE/utils:$LUSTRE/tests/:$DBENCH_LIB \
 		DBENCH_LIB=$DBENCH_LIB TESTSUITE=$TESTSUITE TESTNAME=$TESTNAME \
-		LCTL=$LCTL $cmd" &
+		MOUNT=$MOUNT LCTL=$LCTL $cmd" &
 	pid=$!
 	log "Started rundbench load pid=$pid ..."
 
