@@ -1183,6 +1183,22 @@ int ll_ap_completion(void *data, int cmd, struct obdo *oa, int rc)
                         set_bit(AS_EIO, &page->mapping->flags);
         }
 
+        /*
+         * message might be better placed in llap_write_complete since we are
+         * grabbing the inode there anyway, but rc is not convenient there
+         */
+        if ((cmd & OBD_BRW_WRITE) && (rc == -ESHUTDOWN ) ) {
+                 CWARN ("ll_ap_completion llap_page -ESHUTDOWN S_ID %s I_INO %lu I_UID %u I_GID %u\n",
+                         page->mapping->host->i_sb->s_id,
+                         page->mapping->host->i_ino,
+                         page->mapping->host->i_uid,
+                         page->mapping->host->i_gid);
+                /* path would be desirable, but how to deal with missing
+                 * dentries?
+                 */
+        }
+
+
         /* be carefull about clear WB.
          * if WB will cleared after page lock is released - paralel IO can be
          * started before ap_make_ready is finished - so we will be have page
