@@ -2235,6 +2235,39 @@ static void osc_ap_completion(struct client_obd *cli, struct obdo *oa,
                         oap->oap_loi->loi_lvb.lvb_ctime = oa->o_ctime;
         }
 
+        /* if an asynchronous write was lost before the OST confirmed
+         * that it was committed, report to administrator as path
+         * to user is uncertain - BZ 21812
+         * potential issue - CWARN is rate limited, info could be lost
+         */
+        /* Called with oa == NULL from osc_send_oap_rpc in several
+         * places.   The relevant data is also available in oap_brw_page,
+         * with pointers to inode data and dentry for path reconstruction
+         * but linux/mm.h isn't included here.
+         * Put error message here and ll_ap_completion. Evaluate coverage
+         * in ll_ap_completion, if adequate eliminate this message.
+         */
+        if ( (oap->oap_cmd & OBD_BRW_WRITE) && (rc == -ESHUTDOWN) ) {
+            if ( oa != ( struct obdo * )NULL ) {
+                CWARN ("osc_async_page -ESHUTDOWN OST UUID %s LOI_ID %llu OIG? %d O_ID %llu O_FID %llu  O_UID %u O_GID %u\n",
+                        /* option to deuuidify the below not taken*/
+                        cli->cl_target_uuid.uuid,
+                        oap->oap_loi->loi_id, /* object id on ost */
+                        (oap->oap_oig != (struct obd_io_group*) NULL ) ? 1 : 0,
+                        (oa->o_valid & OBD_MD_FLID)  ? oa->o_id  : 0xffffffffffffffff,
+                        (oa->o_valid & OBD_MD_FLFID) ? oa->o_fid : 0xffffffffffffffff,
+                        (oa->o_valid & OBD_MD_FLUID) ? oa->o_uid   : 0xffffffff,
+                        (oa->o_valid & OBD_MD_FLGID) ?  oa->o_gid : 0xffffffff);
+             } else {  /* oa == NULL */
+                CWARN ("oa_async_page -ESHUTDOWN OST %s LOI_ID %llu OIG? %d obdo pointer NULL\n",
+                        cli->cl_target_uuid.uuid,
+                        oap->oap_loi->loi_id, /* object id on ost */
+                        (oap->oap_oig != (struct obd_io_group*) NULL )  ? 1 : 0
+                        );
+             }
+        }
+
+
         if (oap->oap_oig) {
                 osc_exit_cache(cli, oap, sent);
                 oig_complete_one(oap->oap_oig, &oap->oap_occ, rc);
