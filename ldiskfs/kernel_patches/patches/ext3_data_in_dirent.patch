@@ -537,3 +537,15 @@ Index: b/fs/ext3/dir.c
  	new_fn->name[dirent->name_len] = 0;
  
  	while (*p) {
+Index: b/fs/ext3/super.c
+===================================================================
+--- a/fs/ext3/super.c
++++ b/fs/ext3/super.c
+@@ -1762,6 +1762,7 @@ static int ext3_setup_super(struct super
+        es->s_mtime = cpu_to_le32(get_seconds());
+ 	ext3_update_dynamic_rev(sb);
+        EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
++	EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_DIRDATA);
+ 
+ 	ext3_commit_super(sb, 1);
+ 	if (test_opt(sb, DEBUG))

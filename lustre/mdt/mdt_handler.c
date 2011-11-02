@@ -30,6 +30,9 @@
  * Use is subject to license terms.
  */
 /*
+ * Copyright (c) 2011 Xyratex, Inc.
+ */
+/*
  * Copyright (c) 2011 Whamcloud, Inc.
  */
 /*
@@ -4456,11 +4459,13 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         struct lu_site            *s;
         struct md_site            *mite;
         const char                *identity_upcall = "NONE";
+        struct lu_device          *child_lu_dev;
 #ifdef HAVE_QUOTA_SUPPORT
         struct md_device          *next;
 #endif
         int                        rc;
         int                        node_id;
+        __u32                      flags = 0;
         ENTRY;
 
         md_device_init(&m->mdt_md_dev, ldt);
@@ -4589,6 +4594,16 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
         rc = mdt_seq_init(env, obd->obd_name, m);
         if (rc)
                 GOTO(err_fini_fld, rc);
+
+        if (lsi->lsi_lmd->lmd_flags & LMD_FLG_UPGRADE)
+                flags = LDF_REBUILD_DEFAULT;
+        else if (lsi->lsi_lmd->lmd_flags & LMD_FLG_RESTORE)
+                flags = LDF_REBUILD_OI;
+
+        child_lu_dev = &m->mdt_child->md_lu_dev;
+        rc = child_lu_dev->ld_ops->ldo_rebuild(env, child_lu_dev, flags);
+        if (rc)
+                GOTO(err_fini_seq, rc);
 
         snprintf(info->mti_u.ns_name, sizeof info->mti_u.ns_name,
                  LUSTRE_MDT_NAME"-%p", m);

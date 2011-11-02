@@ -30,6 +30,9 @@
  * Use is subject to license terms.
  */
 /*
+ * Copyright (c) 2011 Xyratex, Inc.
+ */
+/*
  * This file is part of Lustre, http://www.lustre.org/
  * Lustre is a trademark of Sun Microsystems, Inc.
  *
@@ -189,7 +192,9 @@ static int seq_client_alloc_meta(struct lu_client_seq *seq,
 }
 
 /* Allocate new sequence for client. */
-static int seq_client_alloc_seq(struct lu_client_seq *seq, seqno_t *seqnr)
+static int seq_client_alloc_seq(struct lu_client_seq *seq,
+                                seqno_t *seqnr,
+                                const struct lu_env *env)
 {
         int rc;
         ENTRY;
@@ -197,7 +202,7 @@ static int seq_client_alloc_seq(struct lu_client_seq *seq, seqno_t *seqnr)
         LASSERT(range_is_sane(&seq->lcs_space));
 
         if (range_is_exhausted(&seq->lcs_space)) {
-                rc = seq_client_alloc_meta(seq, NULL);
+                rc = seq_client_alloc_meta(seq, env);
                 if (rc) {
                         CERROR("%s: Can't allocate new meta-sequence, "
                                "rc %d\n", seq->lcs_name, rc);
@@ -249,7 +254,9 @@ static void seq_fid_alloc_fini(struct lu_client_seq *seq)
 }
 
 /* Allocate new fid on passed client @seq and save it to @fid. */
-int seq_client_alloc_fid(struct lu_client_seq *seq, struct lu_fid *fid)
+int seq_client_alloc_fid(struct lu_client_seq *seq,
+                         struct lu_fid *fid,
+                         const struct lu_env *env)
 {
         cfs_waitlink_t link;
         int rc;
@@ -276,7 +283,7 @@ int seq_client_alloc_fid(struct lu_client_seq *seq, struct lu_fid *fid)
                 if (rc)
                         continue;
 
-                rc = seq_client_alloc_seq(seq, &seqnr);
+                rc = seq_client_alloc_seq(seq, &seqnr, env);
                 if (rc) {
                         CERROR("%s: Can't allocate new sequence, "
                                "rc %d\n", seq->lcs_name, rc);
