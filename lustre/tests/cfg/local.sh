@@ -133,6 +133,7 @@ FAIL_ON_ERROR=${FAIL_ON_ERROR:-true}
 
 MPIRUN=$(which mpirun 2>/dev/null) || true
 MPI_USER=${MPI_USER:-mpiuser}
+MACHINEFILE_OPTION=${MACHINEFILE_OPTION:-"-machinefile"}
 SHARED_DIR_LOGS=${SHARED_DIR_LOGS:-""}
 
 # This is used by a small number of tests to share state between the client
