@@ -64,7 +64,7 @@ else
     COMMAND="${MDSRATE} ${MDSRATE_DEBUG} --mknod --dir ${TESTDIR}
                         --nfiles ${NUM_FILES} --filefmt 'f%%d'"
     echo "+" ${COMMAND}
-    mpi_run -np ${NUM_THREADS} -machinefile ${MACHINEFILE} ${COMMAND} 2>&1 
+    mpi_run -np ${NUM_THREADS} $MACHINEFILE_OPTION ${MACHINEFILE} ${COMMAND} 2>&1 
 
     # No lockup if error occurs on file creation, abort.
     [ ${PIPESTATUS[0]} != 0 ] && error "mdsrate file creation failed, aborting"
@@ -79,7 +79,7 @@ if [ -n "$NOSINGLE" ]; then
 else
     log "===== $0 ### 1 NODE LOOKUPS ###"
     echo "+" ${COMMAND}
-    mpi_run -np 1 -machinefile ${MACHINEFILE} ${COMMAND} | tee ${LOG}
+    mpi_run -np 1 $MACHINEFILE_OPTION ${MACHINEFILE} ${COMMAND} | tee ${LOG}
 
     if [ ${PIPESTATUS[0]} != 0 ]; then
         [ -f $LOG ] && sed -e "s/^/log: /" $LOG
@@ -94,7 +94,7 @@ if [ -n "$NOMULTI" ]; then
 else
     log "===== $0 ### ${NUM_CLIENTS} NODES LOOKUPS ###"
     echo "+" ${COMMAND}
-    mpi_run -np ${NUM_CLIENTS} -machinefile ${MACHINEFILE} ${COMMAND} | tee ${LOG}
+    mpi_run -np ${NUM_CLIENTS} $MACHINEFILE_OPTION ${MACHINEFILE} ${COMMAND} | tee ${LOG}
 
     if [ ${PIPESTATUS[0]} != 0 ]; then
         [ -f $LOG ] && sed -e "s/^/log: /" $LOG
