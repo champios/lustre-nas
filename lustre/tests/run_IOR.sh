@@ -44,7 +44,7 @@ while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
     # need this only if TESTDIR is not default
     chmod -R 777 $TESTDIR
 
-    mpi_run -np $((NUM_CLIENTS * THREADS_PER_CLIENT)) -machinefile ${MACHINEFILE} \
+    mpi_run -np $((NUM_CLIENTS * THREADS_PER_CLIENT)) $MACHINEFILE_OPTION ${MACHINEFILE} \
         $IOR -a POSIX -b 1g -o $TESTDIR/IOR-file -s 1 -t 1m -v -w -r 1>$LOG &
     load_pid=$!
     wait $load_pid
