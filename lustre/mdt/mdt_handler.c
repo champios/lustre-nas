@@ -1006,6 +1006,13 @@ relock:
                 mdt_lock_handle_init(lhc);
                 mdt_lock_reg_init(lhc, LCK_PR);
 
+                if (mdt_object_exists(child) == 0) {
+                        LU_OBJECT_DEBUG(D_INODE, info->mti_env,
+                                        &child->mot_obj.mo_lu,
+                                        "Object doesn't exist!\n");
+                        GOTO(out_child, rc = -ENOENT);
+                }
+
                 if (!(child_bits & MDS_INODELOCK_UPDATE)) {
                         struct md_attr *ma = &info->mti_attr;
 
