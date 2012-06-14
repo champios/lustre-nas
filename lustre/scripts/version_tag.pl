@@ -74,15 +74,18 @@ sub generate_ver($$$$$$$)
     my $kernver = shift;
     my $env_vers = shift;
 
+    # if --with-downstream-release is defined, use it.
+    if ($local_version ne "") {
+        print "#define BUILD_VERSION \"$local_version\"\n";
+        print "#define KERNEL_VERSION_STRING \"$kernver\"\n";
+        return 0;
+    }
+
     print "#define BUILD_VERSION \"$tag";
 
     if ($env_vers) {
         print "-$env_vers\"\n";
         return 0;
-    }
-
-    if ($local_version ne "") {
-        print "-$local_version";
     }
 
     print "-$buildid";
