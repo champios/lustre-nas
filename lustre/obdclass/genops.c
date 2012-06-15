@@ -799,7 +799,7 @@ void class_export_put(struct obd_export *exp)
 
                 /* release nid stat refererence */
                 lprocfs_exp_cleanup(exp);
-                class_export_recovery_cleanup(exp);
+                // class_export_recovery_cleanup(exp);
 
                 obd_zombie_export_add(exp);
         }
@@ -1153,6 +1153,7 @@ int class_disconnect(struct obd_export *export)
                              &export->exp_nid_hash);
 
         class_unlink_export(export);
+	class_export_recovery_cleanup(export);
 no_disconn:
         class_export_put(export);
         RETURN(0);
