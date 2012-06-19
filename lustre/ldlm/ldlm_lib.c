@@ -1044,17 +1044,13 @@ dont_check_exports:
                              &export->exp_connection->c_peer.nid,
                              &export->exp_nid_hash);
         }
-
+        /**
+          class_disconnect->class_export_recovery_cleanup() race
+         */
         cfs_spin_lock(&target->obd_recovery_task_lock);
         if (target->obd_recovering && !export->exp_in_recovery &&
             !export->exp_disconnected) {
                 cfs_spin_lock(&export->exp_lock);
-		/* possible race with class_disconnect_stale_exports,
-		 * export may be already in the eviction process */
-		if (export->exp_failed) {
-			cfs_spin_unlock(&export->exp_lock);
-			GOTO(out, rc = -ENODEV);
-		}
                 export->exp_in_recovery = 1;
                 export->exp_req_replay_needed = 1;
                 export->exp_lock_replay_needed = 1;
