@@ -2243,3 +2243,81 @@ int ll_show_options(struct seq_file *seq, struct vfsmount *vfs)
 
         RETURN(0);
 }
+
+static char* ll_d_path(struct dentry *dentry, char *buf, int bufsize)
+{
+	char *path = NULL;
+
+#ifdef HAVE_FS_STRUCT_USE_PATH
+	struct path p;
+
+	p.dentry = dentry;
+	p.mnt = current->fs->root.mnt;
+	path_get(&p);
+	path = d_path(&p, buf, bufsize);
+	path_put(&p);
+#else
+	path = d_path(dentry, current->fs->rootmnt, buf, bufsize);
+#endif
+
+	return path;
+}
+
+void ll_dirty_page_discard_warn(cfs_page_t *page, int ioret)
+{
+	char *buf, *path = NULL;
+	struct dentry *dentry = NULL;
+	struct ccc_object *obj = cl_inode2ccc(page->mapping->host);
+
+	buf = (char *)__get_free_page(GFP_KERNEL);
+	if (buf != NULL) {
+		dentry = d_find_alias(page->mapping->host);
+		if (dentry != NULL)
+			path = ll_d_path(dentry, buf, PAGE_SIZE);
+	}
+
+	CWARN("%s: dirty page discard: %s/fid: "DFID"/%s may get corrupted "
+	      "(rc %d)\n", ll_get_fsname(page->mapping->host->i_sb, NULL, 0),
+	      s2lsi(page->mapping->host->i_sb)->lsi_lmd->lmd_dev,
+	      PFID(&obj->cob_header.coh_lu.loh_fid),
+	      (path && !IS_ERR(path)) ? path : "", ioret);
+
+	if (dentry != NULL)
+		dput(dentry);
+
+	if (buf != NULL)
+		free_page((unsigned long)buf);
+}
+
+/**
+ * Get lustre file system name by \a sbi. If \a buf is provided(non-NULL), the
+ * fsname will be returned in this buffer; otherwise, a static buffer will be
+ * used to store the fsname and returned to caller.
+ */
+char *ll_get_fsname(struct super_block *sb, char *buf, int buflen)
+{
+	static char fsname_static[MTI_NAME_MAXLEN];
+	struct lustre_sb_info *lsi = s2lsi(sb);
+	char *ptr;
+	int len;
+
+	if (buf == NULL) {
+		/* this means the caller wants to use static buffer
+		 * and it doesn't care about race. Usually this is
+		 * in error reporting path */
+		buf = fsname_static;
+		buflen = sizeof(fsname_static);
+	}
+
+	len = strlen(lsi->lsi_lmd->lmd_profile);
+	ptr = strrchr(lsi->lsi_lmd->lmd_profile, '-');
+	if (ptr && (strcmp(ptr, "-client") == 0))
+		len -= 7;
+
+	if (unlikely(len >= buflen))
+		len = buflen - 1;
+	strncpy(buf, lsi->lsi_lmd->lmd_profile, len);
+	buf[len] = '\0';
+
+	return buf;
+}

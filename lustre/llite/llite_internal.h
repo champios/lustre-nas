@@ -750,6 +750,7 @@ void ll_umount_begin(struct super_block *sb);
 #endif
 int ll_remount_fs(struct super_block *sb, int *flags, char *data);
 int ll_show_options(struct seq_file *seq, struct vfsmount *vfs);
+void ll_dirty_page_discard_warn(cfs_page_t *page, int ioret);
 int ll_prep_inode(struct inode **inode, struct ptlrpc_request *req,
                   struct super_block *);
 void lustre_dump_dentry(struct dentry *, int recur);
@@ -762,6 +763,7 @@ struct md_op_data *ll_prep_md_op_data(struct md_op_data *op_data,
                                       const char *name, int namelen,
                                       int mode, __u32 opc, void *data);
 void ll_finish_md_op_data(struct md_op_data *op_data);
+char *ll_get_fsname(struct super_block *sb, char *buf, int buflen);
 
 /* llite/llite_nfs.c */
 extern struct export_operations lustre_export_operations;
