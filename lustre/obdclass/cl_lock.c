@@ -595,7 +595,6 @@ struct cl_lock *cl_lock_peek(const struct lu_env *env, const struct cl_io *io,
         struct cl_object_header *head;
         struct cl_object        *obj;
         struct cl_lock          *lock;
-        int ok;
 
         obj  = need->cld_obj;
         head = cl_object_header(obj);
@@ -610,20 +609,18 @@ struct cl_lock *cl_lock_peek(const struct lu_env *env, const struct cl_io *io,
         cl_lock_mutex_get(env, lock);
         if (lock->cll_state == CLS_INTRANSIT)
                 cl_lock_state_wait(env, lock); /* Don't care return value. */
-        if (lock->cll_state == CLS_CACHED) {
-                int result;
-                result = cl_use_try(env, lock, 1);
-                if (result < 0)
-                        cl_lock_error(env, lock, result);
-        }
-        ok = lock->cll_state == CLS_HELD;
-        if (ok) {
-                cl_lock_hold_add(env, lock, scope, source);
-                cl_lock_user_add(env, lock);
+        cl_lock_hold_add(env, lock, scope, source);
+        cl_lock_user_add(env, lock);
+        if (lock->cll_state == CLS_CACHED)
+                cl_use_try(env, lock, 1);
+        if (lock->cll_state == CLS_HELD) {
+                cl_lock_mutex_put(env, lock);
+                cl_lock_lockdep_acquire(env, lock, 0);
                 cl_lock_put(env, lock);
-        }
-        cl_lock_mutex_put(env, lock);
-        if (!ok) {
+        } else {
+                cl_unuse_try(env, lock);
+                cl_lock_unhold(env, lock, scope, source);
+                cl_lock_mutex_put(env, lock);
                 cl_lock_put(env, lock);
                 lock = NULL;
         }
@@ -905,8 +902,10 @@ static void cl_lock_hold_release(const struct lu_env *env, struct cl_lock *lock,
         lu_ref_del(&lock->cll_holders, scope, source);
         cl_lock_hold_mod(env, lock, -1);
         if (lock->cll_holds == 0) {
+                CL_LOCK_ASSERT(lock->cll_state != CLS_HELD, env, lock);
                 if (lock->cll_descr.cld_mode == CLM_PHANTOM ||
-                    lock->cll_descr.cld_mode == CLM_GROUP)
+                    lock->cll_descr.cld_mode == CLM_GROUP ||
+                    lock->cll_state != CLS_CACHED)
                         /*
                          * If lock is still phantom or grouplock when user is
                          * done with it---destroy the lock.
@@ -971,12 +970,17 @@ int cl_lock_state_wait(const struct lu_env *env, struct cl_lock *lock)
                 cl_lock_mutex_put(env, lock);
 
                 LASSERT(cl_lock_nr_mutexed(env) == 0);
-                cfs_waitq_wait(&waiter, CFS_TASK_INTERRUPTIBLE);
+
+                result = -EINTR;
+                if (likely(!OBD_FAIL_CHECK(OBD_FAIL_LOCK_STATE_WAIT_INTR))) {
+                        cfs_waitq_wait(&waiter, CFS_TASK_INTERRUPTIBLE);
+                        if (!cfs_signal_pending())
+                                result = 0;
+                }
 
                 cl_lock_mutex_get(env, lock);
                 cfs_set_current_state(CFS_TASK_RUNNING);
                 cfs_waitq_del(&lock->cll_wq, &waiter);
-                result = cfs_signal_pending() ? -EINTR : 0;
 
                 /* Restore old blocked signals */
                 cfs_restore_sigs(blocked);
@@ -1186,12 +1190,12 @@ int cl_enqueue_try(const struct lu_env *env, struct cl_lock *lock,
         ENTRY;
         cl_lock_trace(D_DLMTRACE, env, "enqueue lock", lock);
         do {
-                result = 0;
-
                 LINVRNT(cl_lock_is_mutexed(lock));
 
-                if (lock->cll_error != 0)
+                result = lock->cll_error;
+                if (result != 0)
                         break;
+
                 switch (lock->cll_state) {
                 case CLS_NEW:
                         cl_lock_state_set(env, lock, CLS_QUEUING);
@@ -1224,9 +1228,7 @@ int cl_enqueue_try(const struct lu_env *env, struct cl_lock *lock,
                         LBUG();
                 }
         } while (result == CLO_REPEAT);
-        if (result < 0)
-                cl_lock_error(env, lock, result);
-        RETURN(result ?: lock->cll_error);
+        RETURN(result);
 }
 EXPORT_SYMBOL(cl_enqueue_try);
 
@@ -1255,6 +1257,7 @@ int cl_lock_enqueue_wait(const struct lu_env *env,
         LASSERT(cl_lock_nr_mutexed(env) == 0);
 
         cl_lock_mutex_get(env, conflict);
+        cl_lock_trace(D_DLMTRACE, env, "enqueue wait", conflict);
         cl_lock_cancel(env, conflict);
         cl_lock_delete(env, conflict);
 
@@ -1299,10 +1302,8 @@ static int cl_enqueue_locked(const struct lu_env *env, struct cl_lock *lock,
                 }
                 break;
         } while (1);
-        if (result != 0) {
-                cl_lock_user_del(env, lock);
-                cl_lock_error(env, lock, result);
-        }
+        if (result != 0)
+                cl_unuse_try(env, lock);
         LASSERT(ergo(result == 0, lock->cll_state == CLS_ENQUEUED ||
                      lock->cll_state == CLS_HELD));
         RETURN(result);
@@ -1339,13 +1340,11 @@ EXPORT_SYMBOL(cl_enqueue);
 /**
  * Tries to unlock a lock.
  *
- * This function is called repeatedly by cl_unuse() until either lock is
- * unlocked, or error occurs.
+ * This function is called to release underlying resource:
+ * 1. for top lock, the resource is sublocks it held;
+ * 2. for sublock, the resource is the reference to dlmlock.
+ *
  * cl_unuse_try is a one-shot operation, so it must NOT return CLO_WAIT.
- *
- * \pre  lock->cll_state == CLS_HELD
- *
- * \post ergo(result == 0, lock->cll_state == CLS_CACHED)
  *
  * \see cl_unuse() cl_lock_operations::clo_unuse()
  * \see cl_lock_state::CLS_CACHED
@@ -1358,8 +1357,14 @@ int cl_unuse_try(const struct lu_env *env, struct cl_lock *lock)
         ENTRY;
         cl_lock_trace(D_DLMTRACE, env, "unuse lock", lock);
 
-        LASSERT(lock->cll_state == CLS_HELD || lock->cll_state == CLS_ENQUEUED);
         if (lock->cll_users > 1) {
+                cl_lock_user_del(env, lock);
+                RETURN(0);
+        }
+
+        /* Only if the lock is in CLS_HELD or CLS_ENQUEUED state, it can hold
+         * underlying resources. */
+        if (!(lock->cll_state == CLS_HELD || lock->cll_state == CLS_ENQUEUED)) {
                 cl_lock_user_del(env, lock);
                 RETURN(0);
         }
@@ -1403,28 +1408,15 @@ int cl_unuse_try(const struct lu_env *env, struct cl_lock *lock)
                  */
                 result = 0;
         } else {
-                CERROR("result = %d, this is unlikely!\n", result);
-                cl_lock_extransit(env, lock, state);
+                CL_LOCK_DEBUG(D_ERROR, env, lock, "unuse return %d\n", result);
+                /* Set the lock state to CLS_NEW so it will be destroyed.
+                 * In lov_lock_unuse() it will release sublocks even if error
+                 * occurs. */
+                cl_lock_extransit(env, lock, CLS_NEW);
         }
-
-        result = result ?: lock->cll_error;
-        if (result < 0)
-                cl_lock_error(env, lock, result);
-        RETURN(result);
+        RETURN(result ?: lock->cll_error);
 }
 EXPORT_SYMBOL(cl_unuse_try);
-
-static void cl_unuse_locked(const struct lu_env *env, struct cl_lock *lock)
-{
-        int result;
-        ENTRY;
-
-        result = cl_unuse_try(env, lock);
-        if (result)
-                CL_LOCK_DEBUG(D_ERROR, env, lock, "unuse return %d\n", result);
-
-        EXIT;
-}
 
 /**
  * Unlocks a lock.
@@ -1433,7 +1425,7 @@ void cl_unuse(const struct lu_env *env, struct cl_lock *lock)
 {
         ENTRY;
         cl_lock_mutex_get(env, lock);
-        cl_unuse_locked(env, lock);
+        cl_unuse_try(env, lock);
         cl_lock_mutex_put(env, lock);
         cl_lock_lockdep_release(env, lock);
         EXIT;
@@ -1466,8 +1458,8 @@ int cl_wait_try(const struct lu_env *env, struct cl_lock *lock)
                 LASSERT(lock->cll_users > 0);
                 LASSERT(lock->cll_holds > 0);
 
-                result = 0;
-                if (lock->cll_error != 0)
+                result = lock->cll_error;
+                if (result != 0)
                         break;
 
                 if (cl_lock_is_intransit(lock)) {
@@ -1493,7 +1485,7 @@ int cl_wait_try(const struct lu_env *env, struct cl_lock *lock)
                         cl_lock_state_set(env, lock, CLS_HELD);
                 }
         } while (result == CLO_REPEAT);
-        RETURN(result ?: lock->cll_error);
+        RETURN(result);
 }
 EXPORT_SYMBOL(cl_wait_try);
 
@@ -1528,8 +1520,7 @@ int cl_wait(const struct lu_env *env, struct cl_lock *lock)
                 break;
         } while (1);
         if (result < 0) {
-                cl_lock_user_del(env, lock);
-                cl_lock_error(env, lock, result);
+                cl_unuse_try(env, lock);
                 cl_lock_lockdep_release(env, lock);
         }
         cl_lock_trace(D_DLMTRACE, env, "wait lock", lock);
@@ -1797,8 +1788,8 @@ void cl_lock_error(const struct lu_env *env, struct cl_lock *lock, int error)
         LINVRNT(cl_lock_invariant(env, lock));
 
         ENTRY;
-        cl_lock_trace(D_DLMTRACE, env, "set lock error", lock);
         if (lock->cll_error == 0 && error != 0) {
+                cl_lock_trace(D_DLMTRACE, env, "set lock error", lock);
                 lock->cll_error = error;
                 cl_lock_signal(env, lock);
                 cl_lock_cancel(env, lock);
@@ -2169,7 +2160,7 @@ struct cl_lock *cl_lock_request(const struct lu_env *env, struct cl_io *io,
                                                                 lock, enqflags);
                                         break;
                                 }
-                                cl_unuse_locked(env, lock);
+                                cl_unuse_try(env, lock);
                         }
                         cl_lock_trace(D_DLMTRACE, env, "enqueue failed", lock);
                         cl_lock_hold_release(env, lock, scope, source);
