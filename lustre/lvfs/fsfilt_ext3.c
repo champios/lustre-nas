@@ -58,6 +58,7 @@
 #ifdef HAVE_EXT4_LDISKFS
 #include <ext4/ext4.h>
 #include <ext4/ext4_jbd2.h>
+#define ext3_ext_cache ext4_ext_cache
 #else
 #include <linux/jbd.h>
 #include <linux/ext3_fs.h>
@@ -892,6 +893,23 @@ static int fsfilt_ext3_sync(struct super_block *sb)
                ext3_ext_insert_extent(handle, inode, path, newext)
 #endif
 
+#ifdef HAVE_EXT_CACHE_EC_TYPE
+#define cached_extent_type(cex)	((cex)->ec_type)
+#else
+#define EXT4_EXT_CACHE_NO      0
+#define EXT4_EXT_CACHE_GAP     1
+#define EXT4_EXT_CACHE_EXTENT  2
+
+static inline int cached_extent_type(struct ext3_ext_cache *cex)
+{
+	if (cex->ec_len == 0)
+		return EXT4_EXT_CACHE_NO;
+	else if(cex->ec_start == 0)
+		return EXT4_EXT_CACHE_GAP;
+	return EXT4_EXT_CACHE_EXTENT;
+}
+#endif
+
 #include <linux/lustre_version.h>
 
 struct bpointers {
@@ -987,9 +1005,7 @@ static unsigned long new_blocks(handle_t *handle, struct ext3_ext_base *base,
 static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
                                   struct ext3_ext_path *path,
                                   struct ext3_ext_cache *cex,
-#ifdef HAVE_EXT_PREPARE_CB_EXTENT
                                    struct ext3_extent *ex,
-#endif
                                   void *cbdata)
 {
         struct bpointers *bp = cbdata;
@@ -1012,7 +1028,7 @@ static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
         unsigned long count;
         handle_t *handle;
 
-        if (cex->ec_type == EXT3_EXT_CACHE_EXTENT) {
+        if (cached_extent_type(cex) == EXT3_EXT_CACHE_EXTENT) {
                 err = EXT_CONTINUE;
                 goto map;
         }
@@ -1086,8 +1102,9 @@ static int ext3_ext_new_extent_cb(struct ext3_ext_base *base,
 #ifdef EXT3_MB_HINT_GROUP_ALLOC
                 ext3_mb_discard_inode_preallocations(inode);
 #endif
-                ext3_free_blocks(handle, inode, ext_pblock(&nex),
-                                 cpu_to_le16(nex.ee_len), 0);
+                ext3_free_blocks(handle, inode, NULL,
+				 ext_pblock(&nex),
+				 cpu_to_le16(nex.ee_len), 0);
                 goto out;
         }
 
@@ -1116,7 +1133,7 @@ map:
                         CERROR("current extent: %u/%u/%llu %d\n",
                                 cex->ec_block, cex->ec_len,
                                 (unsigned long long)cex->ec_start,
-                                cex->ec_type);
+                                cached_extent_type(cex));
                 }
                 i = 0;
                 if (cex->ec_block < bp->start)
@@ -1126,7 +1143,7 @@ map:
                                         i, cex->ec_len);
                 for (; i < cex->ec_len && bp->num; i++) {
                         *(bp->blocks) = cex->ec_start + i;
-                        if (cex->ec_type == EXT3_EXT_CACHE_EXTENT) {
+                        if (cached_extent_type(cex) == EXT3_EXT_CACHE_EXTENT) {
                                 *(bp->created) = 0;
                         } else {
                                 *(bp->created) = 1;
