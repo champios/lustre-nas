@@ -1,3 +1,4 @@
+modulefsdir = @modulefsdir@
 modulefs_DATA = ldiskfs$(KMODEXT)
 
 ldiskfs_linux_headers := $(addprefix linux/,$(subst @BACKFS@,ldiskfs,$(notdir $(linux_headers))))
