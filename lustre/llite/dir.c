@@ -541,7 +541,6 @@ int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
         struct page          *page;
         struct ll_dir_chain   chain;
         int                   done;
-        int                   shift;
         int                   rc;
         ENTRY;
 
@@ -557,7 +556,6 @@ int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 
         rc    = 0;
         done  = 0;
-        shift = 0;
         ll_dir_chain_init(&chain);
 
         fd->fd_dir.lfd_next = pos;

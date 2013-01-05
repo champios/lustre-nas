@@ -352,8 +352,8 @@ int plain_cli_unwrap_bulk(struct ptlrpc_cli_ctx *ctx,
                           struct ptlrpc_request *req,
                           struct ptlrpc_bulk_desc *desc)
 {
-        struct ptlrpc_bulk_sec_desc *bsdr, *bsdv;
-        struct plain_bulk_token     *tokenr, *tokenv;
+        struct ptlrpc_bulk_sec_desc *bsdv;
+        struct plain_bulk_token     *tokenv;
         int                          rc;
 #ifdef __KERNEL__
         int                          i, nob;
@@ -363,8 +363,6 @@ int plain_cli_unwrap_bulk(struct ptlrpc_cli_ctx *ctx,
         LASSERT(req->rq_reqbuf->lm_bufcount == PLAIN_PACK_SEGMENTS);
         LASSERT(req->rq_repdata->lm_bufcount == PLAIN_PACK_SEGMENTS);
 
-        bsdr = lustre_msg_buf(req->rq_reqbuf, PLAIN_PACK_BULK_OFF, 0);
-        tokenr = (struct plain_bulk_token *) bsdr->bsd_data;
         bsdv = lustre_msg_buf(req->rq_repdata, PLAIN_PACK_BULK_OFF, 0);
         tokenv = (struct plain_bulk_token *) bsdv->bsd_data;
 
@@ -912,7 +910,7 @@ int plain_svc_unwrap_bulk(struct ptlrpc_request *req,
 {
         struct ptlrpc_reply_state   *rs = req->rq_reply_state;
         struct ptlrpc_bulk_sec_desc *bsdr, *bsdv;
-        struct plain_bulk_token     *tokenr, *tokenv;
+        struct plain_bulk_token     *tokenr;
         int                          rc;
 
         LASSERT(req->rq_bulk_write);
@@ -921,7 +919,6 @@ int plain_svc_unwrap_bulk(struct ptlrpc_request *req,
         bsdr = lustre_msg_buf(req->rq_reqbuf, PLAIN_PACK_BULK_OFF, 0);
         tokenr = (struct plain_bulk_token *) bsdr->bsd_data;
         bsdv = lustre_msg_buf(rs->rs_repbuf, PLAIN_PACK_BULK_OFF, 0);
-        tokenv = (struct plain_bulk_token *) bsdv->bsd_data;
 
         bsdv->bsd_version = 0;
         bsdv->bsd_type = SPTLRPC_BULK_DEFAULT;
@@ -947,14 +944,13 @@ int plain_svc_wrap_bulk(struct ptlrpc_request *req,
 {
         struct ptlrpc_reply_state   *rs = req->rq_reply_state;
         struct ptlrpc_bulk_sec_desc *bsdr, *bsdv;
-        struct plain_bulk_token     *tokenr, *tokenv;
+        struct plain_bulk_token     *tokenv;
         int                          rc;
 
         LASSERT(req->rq_bulk_read);
         LASSERT(req->rq_pack_bulk);
 
         bsdr = lustre_msg_buf(req->rq_reqbuf, PLAIN_PACK_BULK_OFF, 0);
-        tokenr = (struct plain_bulk_token *) bsdr->bsd_data;
         bsdv = lustre_msg_buf(rs->rs_repbuf, PLAIN_PACK_BULK_OFF, 0);
         tokenv = (struct plain_bulk_token *) bsdv->bsd_data;
 
