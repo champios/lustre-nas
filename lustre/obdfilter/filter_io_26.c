@@ -172,7 +172,7 @@ static int dio_complete_routine(struct bio *bio, unsigned int done, int error)
         }
 
         /* the check is outside of the cycle for performance reason -bzzz */
-        if (!cfs_test_bit(BIO_RW, &bio->bi_rw)) {
+        if (!cfs_test_bit(__REQ_WRITE, &bio->bi_rw)) {
                 bio_for_each_segment(bvl, bio, i) {
                         if (likely(error == 0))
                                 SetPageUptodate(bvl->bv_page);
