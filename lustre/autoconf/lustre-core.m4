@@ -2130,19 +2130,30 @@ LB_LINUX_TRY_COMPILE([
 
 #
 # 2.6.35 file_operations.fsync taken 2 arguments.
+# 3.0.0 file_operations.fsync takes 4 arguments.
 #
 AC_DEFUN([LC_FILE_FSYNC],
-[AC_MSG_CHECKING([if file_operations.fsync taken 2 arguments])
+[AC_MSG_CHECKING([if file_operations.fsync takes 4 or 2 arguments])
 LB_LINUX_TRY_COMPILE([
         #include <linux/fs.h>
 ],[
-        ((struct file_operations *)0)->fsync(NULL, 0);
+        ((struct file_operations *)0)->fsync(NULL, 0, 0, 0);
 ],[
-        AC_DEFINE(HAVE_FILE_FSYNC_2ARGS, 1,
-                [file_operations.fsync taken 2 arguments])
-        AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_FILE_FSYNC_4ARGS, 1,
+                [file_operations.fsync takes 4 arguments])
+        AC_MSG_RESULT([yes, 4 args])
 ],[
-        AC_MSG_RESULT([no])
+        LB_LINUX_TRY_COMPILE([
+                #include <linux/fs.h>
+        ],[
+           ((struct file_operations *)0)->fsync(NULL, 0);
+        ],[
+                AC_DEFINE(HAVE_FILE_FSYNC_2ARGS, 1,
+                        [file_operations.fsync takes 2 arguments])
+                AC_MSG_RESULT([yes, 2 args])
+        ],[
+                AC_MSG_RESULT([no])
+        ])
 ])
 ])
 
@@ -2403,7 +2414,7 @@ AC_DEFUN([LC_PROG_LINUX],
          LC_WALK_SPACE_HAS_DATA_SEM
          LC_SELINUX_IS_ENABLED
 
-         # 2.6.35
+         # 2.6.35, 3.0.0
          LC_FILE_FSYNC
          LC_EXPORT_SIMPLE_SETATTR
 
