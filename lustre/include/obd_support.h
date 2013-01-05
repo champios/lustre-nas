@@ -664,16 +664,6 @@ do {                                                                          \
 } while(0)
 
 
-#ifdef HAVE_RCU
-# ifdef HAVE_CALL_RCU_PARAM
-#  define my_call_rcu(rcu, cb)            call_rcu(rcu, cb, rcu)
-# else
-#  define my_call_rcu(rcu, cb)            call_rcu(rcu, cb)
-# endif
-#else
-# define my_call_rcu(rcu, cb)             (cb)(rcu)
-#endif
-
 #define OBD_FREE_RCU_CB(ptr, size, handle, free_cb)                           \
 do {                                                                          \
         struct portals_handle *__h = (handle);                                \
@@ -681,7 +671,7 @@ do {                                                                          \
         __h->h_ptr = (ptr);                                                   \
         __h->h_size = (size);                                                 \
         __h->h_free_cb = (void (*)(void *, size_t))(free_cb);                 \
-        my_call_rcu(&__h->h_rcu, class_handle_free_cb);                       \
+	call_rcu(&__h->h_rcu, class_handle_free_cb);			      \
         POISON_PTR(ptr);                                                      \
 } while(0)
 #define OBD_FREE_RCU(ptr, size, handle) OBD_FREE_RCU_CB(ptr, size, handle, NULL)

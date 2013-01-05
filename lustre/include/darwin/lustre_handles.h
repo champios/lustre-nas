@@ -44,4 +44,6 @@
 #include <libcfs/list.h>
 #include <libcfs/libcfs.h>
 
+#define call_rcu(rcu, cb)		(cb)(rcu)
+
 #endif
