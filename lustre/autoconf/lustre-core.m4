@@ -1463,7 +1463,7 @@ EXTRA_KCFLAGS="$tmp_flags"
 AC_DEFUN([LC_WALK_SPACE_HAS_DATA_SEM],
 [AC_MSG_CHECKING([if ext4_ext_walk_space() takes i_data_sem])
 WALK_SPACE_DATA_SEM="$(awk 'BEGIN { in_walk_space = 0 }                                 \
-                            /^int ext4_ext_walk_space\(/ { in_walk_space = 1 }          \
+                            /int ext4_ext_walk_space\(/ { in_walk_space = 1 }          \
                             /^}/ { if (in_walk_space) in_walk_space = 0 }               \
                             /i_data_sem/ { if (in_walk_space) { print("yes"); exit } }' \
                        $LINUX/fs/ext4/extents.c)"
