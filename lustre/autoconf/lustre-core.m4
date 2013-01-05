@@ -2272,6 +2272,24 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# 2.6.35 file_operations.fsync taken 2 arguments.
+#
+AC_DEFUN([LC_FILE_FSYNC],
+[AC_MSG_CHECKING([if file_operations.fsync taken 2 arguments])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/fs.h>
+],[
+        ((struct file_operations *)0)->fsync(NULL, 0);
+],[
+        AC_DEFINE(HAVE_FILE_FSYNC_2ARGS, 1,
+                [file_operations.fsync taken 2 arguments])
+        AC_MSG_RESULT([yes])
+],[
+        AC_MSG_RESULT([no])
+])
+])
+
+#
 # 2.6.38 export blkdev_get_by_dev
 #
 AC_DEFUN([LC_BLKDEV_GET_BY_DEV],
@@ -2501,6 +2519,9 @@ AC_DEFUN([LC_PROG_LINUX],
          LC_EXT4_SINGLEDATA_TRANS_BLOCKS_SB
          LC_WALK_SPACE_HAS_DATA_SEM
          LC_SELINUX_IS_ENABLED
+
+         # 2.6.35
+         LC_FILE_FSYNC
 
          # 2.6.36
          LC_SBOPS_EVICT_INODE
