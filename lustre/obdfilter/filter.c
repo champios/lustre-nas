@@ -215,8 +215,8 @@ void f_dput(struct dentry *dentry)
 {
         /* Can't go inside filter_ddelete because it can block */
         CDEBUG(D_INODE, "putting %s: %p, count = %d\n",
-               dentry->d_name.name, dentry, atomic_read(&dentry->d_count) - 1);
-        LASSERT(atomic_read(&dentry->d_count) > 0);
+               dentry->d_name.name, dentry, d_refcount(dentry) - 1);
+        LASSERT(d_refcount(dentry) > 0);
 
         dput(dentry);
 }
@@ -1512,9 +1512,9 @@ struct dentry *filter_fid2dentry(struct obd_device *obd,
         }
 
         CDEBUG(D_INODE, "got child objid %s: %p, count = %d\n",
-               name, dchild, atomic_read(&dchild->d_count));
+               name, dchild, d_refcount(dchild));
 
-        LASSERT(atomic_read(&dchild->d_count) > 0);
+        LASSERT(d_refcount(dchild) > 0);
 
         RETURN(dchild);
 }
