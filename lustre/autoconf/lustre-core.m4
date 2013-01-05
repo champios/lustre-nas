@@ -1900,6 +1900,23 @@ AC_DEFINE(HAVE_SIMPLE_SETATTR, 1,
 ])
 
 #
+# simple_setattr complains when called from a fs with ->truncate now
+#
+AC_DEFUN([LC_HAVE_SETATTR_COPY],
+[AC_MSG_CHECKING([for exported setattr_copy])
+LB_LINUX_TRY_COMPILE([
+        #include <linux/fs.h>
+],[
+	setattr_copy(NULL, NULL);
+],[
+        AC_MSG_RESULT([yes])
+        AC_DEFINE(HAVE_SETATTR_COPY, 1, [Kernel exports setattr_copy])
+],[
+        AC_MSG_RESULT([no])
+])
+])
+
+#
 # 3.3 introduces migrate_mode.h and migratepage has 4 args
 #
 AC_DEFUN([LC_HAVE_MIGRATE_HEADER],
@@ -2088,6 +2105,8 @@ AC_DEFUN([LC_PROG_LINUX],
 	# 3.3
 	LC_HAVE_MIGRATE_HEADER
 	LC_MIGRATEPAGE_4ARGS
+
+	LC_HAVE_SETATTR_COPY
 
          #
          if test x$enable_server = xyes ; then

@@ -1182,6 +1182,23 @@ void ll_clear_inode(struct inode *inode)
         EXIT;
 }
 
+#if HAVE_SETATTR_COPY
+static int ll_simple_setattr(struct dentry *dentry, struct iattr *iattr)
+{
+	struct inode *inode = dentry->d_inode;
+	int error = inode_change_ok(inode, iattr);
+	if (error)
+		return error;
+
+	setattr_copy(inode, iattr);
+	mark_inode_dirty(inode);
+	return 0;
+	return simple_setattr(dentry, iattr);
+}
+#else
+#define ll_simple_setattr(dentry, iattr)	simple_setattr(dentry, iattr)
+#endif
+
 int ll_md_setattr(struct dentry *dentry, struct md_op_data *op_data,
                   struct md_open_data **mod)
 {
@@ -1207,7 +1224,8 @@ int ll_md_setattr(struct dentry *dentry, struct md_op_data *op_data,
                          * Pretend we done everything. */
                         if (!S_ISREG(inode->i_mode) &&
                             !S_ISDIR(inode->i_mode))
-                                rc = simple_setattr(dentry, &op_data->op_attr);
+                                rc = ll_simple_setattr(dentry,
+						       &op_data->op_attr);
                 } else if (rc != -EPERM && rc != -EACCES && rc != -ETXTBSY) {
                         CERROR("md_setattr fails: rc = %d\n", rc);
                 }
@@ -1226,7 +1244,7 @@ int ll_md_setattr(struct dentry *dentry, struct md_op_data *op_data,
          * above to avoid invoking vmtruncate, otherwise it is important
          * to call vmtruncate in inode_setattr to update inode->i_size
          * (bug 6196) */
-        rc = simple_setattr(dentry, &op_data->op_attr);
+        rc = ll_simple_setattr(dentry, &op_data->op_attr);
 
         /* Extract epoch data if obtained. */
         op_data->op_handle = md.body->handle;
