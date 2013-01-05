@@ -1451,7 +1451,7 @@ static int osd_attr_set(const struct lu_env *env,
         cfs_spin_unlock(&obj->oo_guard);
 
         if (!rc)
-                obj->oo_inode->i_sb->s_op->dirty_inode(obj->oo_inode);
+                obj->oo_inode->i_sb->s_op->dirty_inode(obj->oo_inode, I_DIRTY);
         return rc;
 }
 
@@ -2005,7 +2005,7 @@ static void osd_object_ref_add(const struct lu_env *env,
         LASSERT(inode->i_nlink < LDISKFS_LINK_MAX);
         inode->i_nlink++;
         cfs_spin_unlock(&obj->oo_guard);
-        inode->i_sb->s_op->dirty_inode(inode);
+        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
         LINVRNT(osd_invariant(obj));
 }
 
@@ -2028,7 +2028,7 @@ static void osd_object_ref_del(const struct lu_env *env,
         LASSERT(inode->i_nlink > 0);
         inode->i_nlink--;
         cfs_spin_unlock(&obj->oo_guard);
-        inode->i_sb->s_op->dirty_inode(inode);
+        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
         LINVRNT(osd_invariant(obj));
 }
 
@@ -2257,7 +2257,7 @@ static void osd_object_version_set(const struct lu_env *env, struct dt_object *d
         LDISKFS_I(inode)->i_fs_version = new_version;
         /** Version is set after all inode operations are finished,
          *  so we should mark it dirty here */
-        inode->i_sb->s_op->dirty_inode(inode);
+        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
 }
 
 static int osd_data_get(const struct lu_env *env, struct dt_object *dt,
@@ -2545,7 +2545,7 @@ static int osd_ldiskfs_writelink(struct inode *inode, char *buffer, int buflen)
                buflen);
         LDISKFS_I(inode)->i_disksize = buflen;
         i_size_write(inode, buflen);
-        inode->i_sb->s_op->dirty_inode(inode);
+        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
 
         return 0;
 }
@@ -2622,7 +2622,7 @@ osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
                 }
                 spin_unlock(&inode->i_lock);
                 if (dirty_inode)
-                        inode->i_sb->s_op->dirty_inode(inode);
+                        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
         }
 
         if (err == 0)

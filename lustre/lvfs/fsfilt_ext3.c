@@ -259,7 +259,7 @@ static __u64 fsfilt_ext3_set_version(struct inode *inode, __u64 new_version)
         set_i_version(inode, new_version);
         /* version is set after all inode operations are finished, so we should
          * mark it dirty here */
-        inode->i_sb->s_op->dirty_inode(inode);
+        inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
         return old_version;
 }
 
@@ -621,7 +621,7 @@ static int fsfilt_ext3_setattr(struct dentry *dentry, void *handle,
                                 inode->i_mode &= ~S_ISGID;
                 }
 
-                inode->i_sb->s_op->dirty_inode(inode);
+                inode->i_sb->s_op->dirty_inode(inode, I_DIRTY);
 
                 goto out;
         }
