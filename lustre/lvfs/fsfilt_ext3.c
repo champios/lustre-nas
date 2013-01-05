@@ -1474,7 +1474,11 @@ static int fsfilt_ext3_setup(struct super_block *sb)
         }
         sbi->s_jquota_fmt = QFMT_LUSTRE;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,13))
+#ifndef HAVE_SET_OPT_TAKES_LONG
+        set_opt(sb, QUOTA);
+#else
         set_opt(sbi->s_mount_opt, QUOTA);
+#endif
 #endif
 #endif
         return 0;
