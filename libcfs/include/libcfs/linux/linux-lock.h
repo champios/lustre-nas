@@ -254,15 +254,6 @@ static inline int cfs_mutex_is_locked(cfs_mutex_t *lock)
 #define cfs_mutex_is_locked(x)  mutex_is_locked(x)
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,6,16) */
 
-/*
- * Kernel locking primitives
- *
- * - lock_kernel
- * - unlock_kernel
- */
-#define cfs_lock_kernel()      lock_kernel()
-#define cfs_unlock_kernel()    unlock_kernel()
-
 #ifndef lockdep_set_class
 
 /**************************************************************************
