@@ -956,7 +956,8 @@ int jt_dbg_modules(int argc, char **argv)
                 return 0;
         }
 
-        if (sysinfo.release[2] > '4') {
+        if ((sysinfo.release[0] == '2' && sysinfo.release[2] > '4') ||
+	    sysinfo.release[0] == '3') {
                 return jt_dbg_modules_2_5(argc, argv);
         } else {
                 return jt_dbg_modules_2_4(argc, argv);
