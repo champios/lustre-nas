@@ -674,15 +674,22 @@ ll_quota_on(struct super_block *sb, int off, int ver, char *name, int remount)
 
 static inline int ll_quota_off(struct super_block *sb, int off, int remount)
 {
+	int ret = -ENOSYS;
         if (sb->s_qcop->quota_off) {
-                return sb->s_qcop->quota_off(sb, off
+#ifdef WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK
+		down_read(&sb->s_umount);
+#endif
+                ret = sb->s_qcop->quota_off(sb, off
 #ifdef HAVE_QUOTA_OFF_3ARGS
                                              , remount
 #endif
                                             );
+#ifdef WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK
+		up_read(&sb->s_umount);
+#endif
         }
-        else
-                return -ENOSYS;
+
+	return ret;
 }
 
 #ifndef HAVE_BLK_QUEUE_LOG_BLK_SIZE /* added in 2.6.31 */

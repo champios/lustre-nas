@@ -1497,6 +1497,23 @@ else
 fi
 ])
 
+AC_DEFUN([LC_WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK],
+[AC_MSG_CHECKING([if some writeback_inodes requires sb->s_umount lock])
+WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK="$(awk 'BEGIN { in_func = 0 }         \
+                            /void writeback_inodes_sb_nr\(/ { in_func = 1 }    \
+                            /^}/ { if (in_func) in_func = 0 }               \
+                            /rwsem_is_locked\(&sb->s_umount)/ { if (in_func) { print("yes"); exit } }' \
+                       $LINUX/fs/fs-writeback.c)"
+if test x"$WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK" == xyes ; then
+       AC_DEFINE(WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK, 1,
+                 [writeback_inodes requires sb->s_umount lock])
+       AC_MSG_RESULT([yes])
+else
+       AC_MSG_RESULT([no])
+fi
+])
+
+
 #
 # LC_QUOTA64
 #
@@ -2045,6 +2062,9 @@ AC_DEFUN([LC_PROG_LINUX],
          # 2.6.36
          LC_FS_STRUCT_RWLOCK
          LC_SBOPS_EVICT_INODE
+
+	 # Not technically but that's when ext4_quota_off was introduced
+	 LC_WRITEBACK_INODES_NEEDS_SB_UMOUNT_LOCK
 
          # 2.6.37
          LC_KERNEL_LOCKED
