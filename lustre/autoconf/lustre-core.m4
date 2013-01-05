@@ -1477,6 +1477,27 @@ fi
 ])
 
 #
+# LC_FS_FSYNC_DOES_WRITE_AND_WAIT
+#
+# 3.1 pushes i_mutex into fs implementations of fsync
+#
+AC_DEFUN([LC_FS_FSYNC_DOES_WRITE_AND_WAIT],
+[AC_MSG_CHECKING([if filemap_write_and_wait_range is called in ext4_sync_file])
+FS_FSYNC_DOES_WRITE_AND_WAIT="$(awk 'BEGIN { in_func = 0 }                  \
+                            /int ext4_sync_file\(/ { in_func = 1 }          \
+                            /^}/ { if (in_func) in_func = 0 }               \
+                            /filemap_write_and_wait_range/ { if (in_func) { print("yes"); exit } }' \
+                       $LINUX/fs/ext4/fsync.c)"
+if test x"$FS_FSYNC_DOES_WRITE_AND_WAIT" == xyes ; then
+       AC_DEFINE(FS_FSYNC_DOES_WRITE_AND_WAIT, 1,
+                 [f_op->fsync() takes i_data_sem])
+       AC_MSG_RESULT([yes])
+else
+       AC_MSG_RESULT([no])
+fi
+])
+
+#
 # LC_QUOTA64
 #
 # Check if kernel has been patched for 64-bit quota limits support.
@@ -2040,6 +2061,9 @@ AC_DEFUN([LC_PROG_LINUX],
 	 # 2.6.39
          LC_REQUEST_QUEUE_UNPLUG_FN
 	 LC_HAVE_FSTYPE_MOUNT
+
+	# 3.1
+	LC_FS_FSYNC_DOES_WRITE_AND_WAIT
 
 	# 3.3
 	LC_HAVE_MIGRATE_HEADER

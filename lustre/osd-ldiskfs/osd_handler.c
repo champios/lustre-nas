@@ -2233,9 +2233,13 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt)
 	file->f_dentry = dentry;
 	file->f_mapping = inode->i_mapping;
 	file->f_op = inode->i_fop;
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
 	mutex_lock(&inode->i_mutex);
+#endif
 	rc = file->f_op->fsync(file, 0, LLONG_MAX, 0);
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
 	mutex_unlock(&inode->i_mutex);
+#endif
 	RETURN(rc);
 }
 

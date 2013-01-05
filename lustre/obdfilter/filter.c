@@ -4332,7 +4332,10 @@ static int filter_sync(struct obd_export *exp, struct obd_info *oinfo,
         struct lvfs_run_ctxt saved;
         struct obd_device_target *obt;
         struct dentry *dentry;
-        int rc, rc2;
+        int rc;
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
+	int rc2;
+#endif
         ENTRY;
 
         rc = filter_auth_capa(exp, NULL, oinfo->oi_oa->o_seq,
@@ -4357,9 +4360,10 @@ static int filter_sync(struct obd_export *exp, struct obd_info *oinfo,
 
         push_ctxt(&saved, &exp->exp_obd->obd_lvfs_ctxt, NULL);
 
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
 	mutex_lock(&dentry->d_inode->i_mutex);
-
 	rc = filemap_fdatawrite(dentry->d_inode->i_mapping);
+#endif
 	if (rc == 0) {
 		/* just any file to grab fsync method - "file" arg unused */
 		struct file *file = obt->obt_rcvd_filp;
@@ -4380,11 +4384,15 @@ static int filter_sync(struct obd_export *exp, struct obd_info *oinfo,
 
 		kfree(fp);
 
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
 		rc2 = filemap_fdatawait(dentry->d_inode->i_mapping);
 		if (!rc)
 			rc = rc2;
+#endif
 	}
+#ifndef FS_FSYNC_DOES_WRITE_AND_WAIT
 	mutex_unlock(&dentry->d_inode->i_mutex);
+#endif
 
         oinfo->oi_oa->o_valid = OBD_MD_FLID;
         obdo_from_inode(oinfo->oi_oa, dentry->d_inode, NULL,

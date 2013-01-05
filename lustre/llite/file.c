@@ -1943,9 +1943,20 @@ int ll_fsync(struct file *file, struct dentry *dentry, int data)
                inode->i_generation, inode);
         ll_stats_ops_tally(ll_i2sbi(inode), LPROC_LL_FSYNC, 1);
 
+#ifdef FS_FSYNC_DOES_WRITE_AND_WAIT
+	mutex_lock(&inode->i_mutex);
+
+	rc = filemap_write_and_wait_range(inode->i_mapping, 0, LLONG_MAX);
+	if (rc) {
+		mutex_unlock(&inode->i_mutex);
+		return rc;
+	}
+#else
+
         /* fsync's caller has already called _fdata{sync,write}, we want
          * that IO to finish before calling the osc and mdc sync methods */
         rc = filemap_fdatawait(inode->i_mapping);
+#endif
 
         /* catch async errors that were recorded back when async writeback
          * failed for pages in this mapping. */
@@ -1972,10 +1983,17 @@ int ll_fsync(struct file *file, struct dentry *dentry, int data)
                 struct obd_info *oinfo;
 
                 OBD_ALLOC_PTR(oinfo);
-                if (!oinfo)
+                if (!oinfo) {
+#ifdef FS_FSYNC_DOES_WRITE_AND_WAIT
+			mutex_unlock(&inode->i_mutex);
+#endif
                         RETURN(rc ? rc : -ENOMEM);
+		}
                 OBDO_ALLOC(oinfo->oi_oa);
                 if (!oinfo->oi_oa) {
+#ifdef FS_FSYNC_DOES_WRITE_AND_WAIT
+			mutex_unlock(&inode->i_mutex);
+#endif
                         OBD_FREE_PTR(oinfo);
                         RETURN(rc ? rc : -ENOMEM);
                 }
@@ -1998,6 +2016,9 @@ int ll_fsync(struct file *file, struct dentry *dentry, int data)
                 lli->lli_write_rc = err < 0 ? : 0;
         }
 
+#ifdef FS_FSYNC_DOES_WRITE_AND_WAIT
+	mutex_unlock(&inode->i_mutex);
+#endif
         RETURN(rc);
 }
 
