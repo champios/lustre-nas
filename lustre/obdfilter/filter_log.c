@@ -77,8 +77,10 @@ int filter_log_sz_change(struct llog_handle *cathandle,
 		ofd->ofd_epoch = ioepoch;
 	} else if (!ofd) {
 		OBD_ALLOC(ofd, sizeof(*ofd));
-		if (!ofd)
+		if (!ofd) {
+			mutex_unlock(&inode->i_mutex);
 			GOTO(out, rc = -ENOMEM);
+		}
 		igrab(inode);
 		inode->i_private = ofd;
 		ofd->ofd_epoch = ioepoch;
