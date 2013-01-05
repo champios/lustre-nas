@@ -167,7 +167,7 @@ struct obd_statfs {
 #define LL_IOC_OBD_STATFS       IOC_OBD_STATFS
 #define IOC_MDC_GETSTRIPE       IOC_MDC_GETFILESTRIPE
 
-#define O_LOV_DELAY_CREATE 0100000000  /* hopefully this does not conflict */
+#define O_LOV_DELAY_CREATE 0200000000  /* is usually 0100000000, but that is claimed by FMODE_NONOTIFY in 2.6.36 */
 
 #define LL_FILE_IGNORE_LOCK     0x00000001
 #define LL_FILE_GROUP_LOCKED    0x00000002
