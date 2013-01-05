@@ -21,6 +21,7 @@ CPU=`awk '/model/ {print $4}' /proc/cpuinfo`
 case `uname -r` in
 2.4*) FSTYPE=${FSTYPE:-ext3} ;;
 2.6*) FSTYPE=${FSTYPE:-ldiskfs} ;;
+3.*) FSTYPE=${FSTYPE:-ldiskfs} ;;
 *) error "unsupported kernel" ;;
 esac
 
@@ -7105,7 +7106,7 @@ test_140() { #bug-17379
         done
         i=`expr $i - 1`
         echo "The symlink depth = $i"
-        [ $i -eq 5 -o $i -eq 7 -o $i -eq 8 ] || error "Invalid symlink depth"
+        [ $i -eq 5 -o $i -eq 7 -o $i -eq 8 ] || error "Invalid symlink depth $i"
 }
 run_test 140 "Check reasonable stack depth (shouldn't LBUG) ===="
 
