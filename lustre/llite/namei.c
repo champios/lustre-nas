@@ -595,10 +595,14 @@ static struct dentry *ll_lookup_nd(struct inode *parent, struct dentry *dentry,
                                                        (struct ptlrpc_request *)
                                                           it->d.lustre.it_data);
                                 } else {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17))
-/* 2.6.1[456] have a bug in open_namei() that forgets to check
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+/*
+ * 2.6.1[456] have a bug in open_namei() that forgets to check
  * nd->intent.open.file for error, so we need to return it as lookup's result
- * instead */
+ * instead.
+ * Kernel commit f374ed5f removed this again in 2.6.39 since ->d_revalidate
+ * can return errors. Lookup still needs to handle the failure here, though.
+ */
                                         struct file *filp;
                                         nd->intent.open.file->private_data = it;
                                         filp =lookup_instantiate_filp(nd,dentry,
