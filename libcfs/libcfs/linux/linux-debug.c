@@ -207,6 +207,7 @@ void lbug_with_loc(struct libcfs_debug_msg_data *msgdata)
 #include <linux/nmi.h>
 #include <asm/stacktrace.h>
 
+#ifdef HAVE_STACKTRACE_WARNING
 static void
 print_trace_warning_symbol(void *data, char *msg, unsigned long symbol)
 {
@@ -219,6 +220,7 @@ static void print_trace_warning(void *data, char *msg)
 {
 	printk("%s%s\n", (char *)data, msg);
 }
+#endif
 
 static int print_trace_stack(void *data, char *name)
 {
@@ -244,8 +246,10 @@ static void print_trace_address(void *data, unsigned long addr)
 }
 
 static DUMP_TRACE_CONST struct stacktrace_ops print_trace_ops = {
+#ifdef HAVE_STACKTRACE_WARNING
 	.warning = print_trace_warning,
 	.warning_symbol = print_trace_warning_symbol,
+#endif
 	.stack = print_trace_stack,
 	.address = print_trace_address,
 #ifdef STACKTRACE_OPS_HAVE_WALK_STACK
