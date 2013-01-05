@@ -48,6 +48,7 @@
 #include <obd_support.h>
 #include <lustre_lite.h>
 #include <lustre_dlm.h>
+#include <lustre_mdc.h>
 #include <linux/lustre_version.h>
 #include "llite_internal.h"
 
