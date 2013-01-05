@@ -4364,8 +4364,21 @@ static int filter_sync(struct obd_export *exp, struct obd_info *oinfo,
 		/* just any file to grab fsync method - "file" arg unused */
 		struct file *file = obt->obt_rcvd_filp;
 
-		if (file->f_op && file->f_op->fsync)
-			rc = file->f_op->fsync(NULL, dentry, 1);
+		/*
+		 * 208 bytes, don't want it on the stack;
+		 * using get_empty_filp counts against open files
+		 */
+		struct file *fp = kzalloc(sizeof (*fp), GFP_NOFS);
+		if (fp) {
+			fp->f_mapping = dentry->d_inode->i_mapping;
+			fp->f_path.dentry = dentry;
+		} else
+			rc = -ENOMEM;
+
+		if (!rc && file->f_op && file->f_op->fsync)
+			rc = file->f_op->fsync(fp, 0, LLONG_MAX, 1);
+
+		kfree(fp);
 
 		rc2 = filemap_fdatawait(dentry->d_inode->i_mapping);
 		if (!rc)
