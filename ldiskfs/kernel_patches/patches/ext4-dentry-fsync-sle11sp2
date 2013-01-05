@@ -1,0 +1,39 @@
+---
+ fs/ext4/fsync.c             |    2 +-
+ include/trace/events/ext4.h |    6 ++----
+ 2 files changed, 3 insertions(+), 5 deletions(-)
+
+--- a/fs/ext4/fsync.c
++++ b/fs/ext4/fsync.c
+@@ -202,7 +202,7 @@ int ext4_sync_file(struct file *file, lo
+
+ 	J_ASSERT(ext4_journal_current_handle() == NULL);
+
+-	trace_ext4_sync_file_enter(file, datasync);
++	trace_ext4_sync_file_enter(file->f_path.dentry, datasync);
+
+ 	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
+ 	if (ret)
+--- a/include/trace/events/ext4.h
++++ b/include/trace/events/ext4.h
+@@ -750,9 +750,9 @@ TRACE_EVENT(ext4_free_blocks,
+ );
+
+ TRACE_EVENT(ext4_sync_file_enter,
+-	TP_PROTO(struct file *file, int datasync),
++	TP_PROTO(struct dentry *dentry, int datasync),
+
+-	TP_ARGS(file, datasync),
++	TP_ARGS(dentry, datasync),
+
+ 	TP_STRUCT__entry(
+ 		__field(	dev_t,	dev			)
+@@ -762,8 +762,6 @@ TRACE_EVENT(ext4_sync_file_enter,
+ 	),
+
+ 	TP_fast_assign(
+-		struct dentry *dentry = file->f_path.dentry;
+-
+ 		__entry->dev		= dentry->d_inode->i_sb->s_dev;
+ 		__entry->ino		= dentry->d_inode->i_ino;
+ 		__entry->datasync	= datasync;

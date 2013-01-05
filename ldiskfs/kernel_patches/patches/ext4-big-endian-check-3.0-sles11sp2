@@ -1,0 +1,59 @@
+---
+ fs/ext4/super.c |   18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -110,6 +110,8 @@ static struct file_system_type ext3_fs_t
+ #define IS_EXT3_SB(sb) (0)
+ #endif
+
++static int bigendian_extents;
++
+ ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
+ 			       struct ext4_group_desc *bg)
+ {
+@@ -1292,7 +1294,7 @@ enum {
+ 	Opt_stripe, Opt_delalloc, Opt_nodelalloc, Opt_mblk_io_submit,
+ 	Opt_nomblk_io_submit, Opt_block_validity, Opt_noblock_validity,
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+-	Opt_dioread_nolock, Opt_dioread_lock,
++	Opt_dioread_nolock, Opt_dioread_lock, Opt_bigendian_extents,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
+ };
+
+@@ -1362,6 +1364,7 @@ static const match_table_t tokens = {
+ 	{Opt_auto_da_alloc, "auto_da_alloc=%u"},
+ 	{Opt_auto_da_alloc, "auto_da_alloc"},
+ 	{Opt_noauto_da_alloc, "noauto_da_alloc"},
++	{Opt_bigendian_extents, "bigendian_extents"},
+ 	{Opt_dioread_nolock, "dioread_nolock"},
+ 	{Opt_dioread_lock, "dioread_lock"},
+ 	{Opt_discard, "discard"},
+@@ -1833,6 +1836,9 @@ set_qf_format:
+ 			else
+ 				set_opt(sb,NO_AUTO_DA_ALLOC);
+ 			break;
++		case Opt_bigendian_extents:
++			bigendian_extents = 1;
++			break;
+ 		case Opt_discard:
+ 			set_opt(sb, DISCARD);
+ 			break;
+@@ -3422,6 +3428,16 @@ static int ext4_fill_super(struct super_
+ 		goto failed_mount;
+ 	}
+
++#ifdef __BIG_ENDIAN
++	if (bigendian_extents == 0) {
++		printk(KERN_ERR "EXT4-fs: extents feature is not guaranteed to "
++		       "work on big-endian systems. Use \"bigendian_extents\" "
++		       "mount option to override.\n");
++		goto failed_mount;
++	}
++#endif
++
++
+ #ifdef CONFIG_PROC_FS
+ 	if (ext4_proc_root)
+ 		sbi->s_proc = proc_mkdir(sb->s_id, ext4_proc_root);

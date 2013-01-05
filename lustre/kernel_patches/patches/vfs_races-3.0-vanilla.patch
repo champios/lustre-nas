@@ -1,0 +1,31 @@
+---
+ fs/dcache.c            |    7 +++++++
+ include/linux/dcache.h |    1 +
+ 2 files changed, 8 insertions(+)
+
+--- a/fs/dcache.c
++++ b/fs/dcache.c
+@@ -493,6 +493,13 @@ int d_invalidate(struct dentry * dentry)
+ 		spin_unlock(&dentry->d_lock);
+ 		return 0;
+ 	}
++
++	/* network invalidation by Lustre */
++	if (dentry->d_flags & DCACHE_LUSTRE_INVALID) {
++		spin_unlock(&dentry->d_lock);
++		return 0;
++	}
++
+ 	/*
+ 	 * Check whether to do a partial shrink_dcache
+ 	 * to get rid of unused child entries.
+--- a/include/linux/dcache.h
++++ b/include/linux/dcache.h
+@@ -208,6 +208,7 @@ struct dentry_operations {
+ #define DCACHE_CANT_MOUNT	0x0100
+ #define DCACHE_GENOCIDE		0x0200
+ #define DCACHE_SHRINK_LIST	0x0400
++#define DCACHE_LUSTRE_INVALID	0x0040  /* Lustre invalidated */
+
+ #define DCACHE_OP_HASH		0x1000
+ #define DCACHE_OP_COMPARE	0x2000

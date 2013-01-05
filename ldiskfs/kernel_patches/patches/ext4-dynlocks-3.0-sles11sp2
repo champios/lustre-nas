@@ -1,0 +1,47 @@
+---
+ fs/ext4/Makefile |    2 +-
+ fs/ext4/super.c  |    6 ++++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
+@@ -7,7 +7,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+ 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
+-		mmp.o
++		mmp.o dynlocks.o
+
+ ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
+ ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -5031,6 +5031,9 @@ static int __init ext4_init_fs(void)
+ 	err = init_inodecache();
+ 	if (err)
+ 		goto out1;
++	err = dynlock_cache_init();
++	if (err)
++		goto out_inodecache;
+ 	register_as_ext3();
+ 	register_as_ext2();
+ 	err = register_filesystem(&ext4_fs_type);
+@@ -5041,8 +5044,10 @@ static int __init ext4_init_fs(void)
+ 	mutex_init(&ext4_li_mtx);
+ 	return 0;
+ out:
++	dynlock_cache_exit();
+ 	unregister_as_ext2();
+ 	unregister_as_ext3();
++out_inodecache:
+ 	destroy_inodecache();
+ out1:
+ 	ext4_exit_xattr();
+@@ -5068,6 +5073,7 @@ static void __exit ext4_exit_fs(void)
+ 	unregister_as_ext3();
+ 	unregister_filesystem(&ext4_fs_type);
+ 	destroy_inodecache();
++	dynlock_cache_exit();
+ 	ext4_exit_xattr();
+ 	ext4_exit_mballoc();
+ 	ext4_exit_feat_adverts();

@@ -1,0 +1,59 @@
+---
+ fs/ext4/super.c |   18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -59,6 +59,8 @@ static struct ext4_lazy_init *ext4_li_in
+ static struct mutex ext4_li_mtx;
+ static struct ext4_features *ext4_feat;
+
++static int force_over_128tb;
++
+ static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
+ 			     unsigned long journal_devnum);
+ static int ext4_commit_super(struct super_block *sb, int sync);
+@@ -1315,7 +1317,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock, Opt_bigendian_extents,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
+-	Opt_mballoc,
++	Opt_mballoc, Opt_force_over_128tb,
+ };
+
+ static match_table_t tokens = {
+@@ -1393,6 +1395,7 @@ static match_table_t tokens = {
+ 	{Opt_init_itable, "init_itable"},
+ 	{Opt_noinit_itable, "noinit_itable"},
+ 	{Opt_mballoc, "mballoc"},
++	{Opt_force_over_128tb, "force_over_128tb"},
+ 	{Opt_err, NULL},
+ };
+
+@@ -1888,6 +1891,9 @@ set_qf_format:
+ 			break;
+ 		case Opt_mballoc:
+ 			break;
++		case Opt_force_over_128tb:
++			force_over_128tb = 1;
++			break;
+ 		default:
+ 			ext4_msg(sb, KERN_ERR,
+ 			       "Unrecognized mount option \"%s\" "
+@@ -3399,6 +3405,16 @@ static int ext4_fill_super(struct super_
+ 		goto failed_mount;
+ 	}
+
++	if (ext4_blocks_count(es) > (8ULL << 32)) {
++		if (force_over_128tb == 0) {
++			printk(KERN_ERR "EXT4-fs does not support filesystems "
++			       "greater than 128TB and can cause data corruption."
++			       "Use \"force_over_128tb\" mount option to override."
++			       "\n");
++			goto failed_mount;
++		}
++	}
++
+ 	if (EXT4_BLOCKS_PER_GROUP(sb) == 0)
+ 		goto cantfind_ext4;
+

@@ -1,0 +1,33 @@
+---
+ fs/ext4/ext4.h  |    7 +++++++
+ fs/ext4/xattr.c |    3 ++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1709,6 +1709,13 @@ struct mmpd_data {
+ #define EXT4_MAX_DIR_SIZE_NAME		"max_dir_size"
+
+ /*
++ * Indicates that ctime should not be updated in ext4_xattr_set_handle()
++ */
++#ifndef XATTR_NO_CTIME
++#define XATTR_NO_CTIME 0x80
++#endif
++
++/*
+  * Function prototypes
+  */
+
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1053,7 +1053,8 @@ ext4_xattr_set_handle(handle_t *handle,
+ 	}
+ 	if (!error) {
+ 		ext4_xattr_update_super_block(handle, inode->i_sb);
+-		inode->i_ctime = ext4_current_time(inode);
++		if (!(flags & XATTR_NO_CTIME))
++			inode->i_ctime = ext4_current_time(inode);
+ 		if (!value)
+ 			ext4_clear_inode_state(inode, EXT4_STATE_NO_EXPAND);
+ 		error = ext4_mark_iloc_dirty(handle, inode, &is.iloc);

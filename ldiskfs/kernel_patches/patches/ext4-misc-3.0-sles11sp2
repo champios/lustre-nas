@@ -1,0 +1,340 @@
+---
+ fs/ext4/ext4.h         |    6 +++
+ fs/ext4/ext4_extents.h |   20 +++++++++++++
+ fs/ext4/ext4_jbd2.c    |    2 +
+ fs/ext4/ext4_jbd2.h    |    2 +
+ fs/ext4/extents.c      |   75 +++++++++++++++++++++++++++++++++++++++++++------
+ fs/ext4/inode.c        |    2 +
+ fs/ext4/mballoc.c      |    3 +
+ fs/ext4/super.c        |    7 ++++
+ 8 files changed, 108 insertions(+), 9 deletions(-)
+
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -37,6 +37,9 @@
+  * The fourth extended filesystem constants/structures
+  */
+
++/* Has been moved to linux/magic.h but we need it for Lustre */
++#define EXT4_SUPER_MAGIC	0xEF53
++
+ /*
+  * Define EXT4FS_DEBUG to produce debug messages
+  */
+@@ -634,6 +637,9 @@ struct ext4_inode {
+ 	__le32  i_version_hi;	/* high 32 bits for 64-bit version */
+ };
+
++/* SLES11 kernel already has 64-bit inode->i_version field */
++#define HAVE_DISK_INODE_VERSION
++
+ struct move_extent {
+ 	__u32 reserved;		/* should be zero */
+ 	__u32 donor_fd;		/* donor file descriptor */
+--- a/fs/ext4/ext4_extents.h
++++ b/fs/ext4/ext4_extents.h
+@@ -58,6 +58,13 @@
+  */
+ #define EXT_STATS_
+
++/*
++ * define EXT4_ALLOC_NEEDED to 0 since block bitmap, group desc. and sb
++ * are now accounted in ext4_ext_calc_credits_for_insert()
++ */
++#define EXT4_ALLOC_NEEDED 0
++
++#define EXT4_EXT_HAS_NO_TREE  /* ext4_extents_tree struct is not used*/
+
+ /*
+  * ext4_inode has i_block array (60 bytes total).
+@@ -237,6 +244,8 @@ static inline ext4_fsblk_t ext4_ext_pblo
+ 	return block;
+ }
+
++#define ext_pblock(ex) ext4_ext_pblock(ex)
++
+ /*
+  * ext4_idx_pblock:
+  * combine low and high parts of a leaf physical block number into ext4_fsblk_t
+@@ -279,6 +288,8 @@ static inline void ext4_idx_store_pblock
+ extern int ext4_ext_calc_metadata_amount(struct inode *inode,
+ 					 ext4_lblk_t lblocks);
+ extern int ext4_extent_tree_init(handle_t *, struct inode *);
++extern int ext4_ext_calc_credits_for_insert(struct inode *,
++					    struct ext4_ext_path *);
+ extern int ext4_ext_calc_credits_for_single_extent(struct inode *inode,
+ 						   int num,
+ 						   struct ext4_ext_path *path);
+@@ -290,5 +301,14 @@ extern struct ext4_ext_path *ext4_ext_fi
+ 							struct ext4_ext_path *);
+ extern void ext4_ext_drop_refs(struct ext4_ext_path *);
+ extern int ext4_ext_check_inode(struct inode *inode);
++extern int ext4_ext_search_left(struct inode *inode,
++				struct ext4_ext_path *path,
++				ext4_lblk_t *logical, ext4_fsblk_t *phys);
++extern int ext4_ext_search_right(struct inode *inode,
++				 struct ext4_ext_path *path,
++				 ext4_lblk_t *logical, ext4_fsblk_t *phys);
++extern int ext4_ext_walk_space(struct inode *inode, ext4_lblk_t block,
++			       ext4_lblk_t num, ext_prepare_callback func,
++			       void *cbdata);
+ #endif /* _EXT4_EXTENTS */
+
+--- a/fs/ext4/ext4_jbd2.c
++++ b/fs/ext4/ext4_jbd2.c
+@@ -19,6 +19,7 @@ int __ext4_journal_get_write_access(cons
+ 	}
+ 	return err;
+ }
++EXPORT_SYMBOL(__ext4_journal_get_write_access);
+
+ /*
+  * The ext4 forget function must perform a revoke if we are freeing data
+@@ -134,6 +135,7 @@ int __ext4_handle_dirty_metadata(const c
+ 	}
+ 	return err;
+ }
++EXPORT_SYMBOL(__ext4_handle_dirty_metadata);
+
+ int __ext4_handle_dirty_super(const char *where, unsigned int line,
+ 			      handle_t *handle, struct super_block *sb)
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -153,6 +153,8 @@ int __ext4_handle_dirty_super(const char
+ #define ext4_handle_dirty_metadata(handle, inode, bh) \
+ 	__ext4_handle_dirty_metadata(__func__, __LINE__, (handle), (inode), \
+ 				     (bh))
++#define ext4_journal_dirty_metadata(handle, bh) \
++	ext4_handle_dirty_metadata(handle, NULL, bh)
+ #define ext4_handle_dirty_super(handle, sb) \
+ 	__ext4_handle_dirty_super(__func__, __LINE__, (handle), (sb))
+
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -534,6 +534,7 @@ void ext4_ext_drop_refs(struct ext4_ext_
+ 			path->p_bh = NULL;
+ 		}
+ }
++EXPORT_SYMBOL(ext4_ext_drop_refs);
+
+ /*
+  * ext4_ext_binsearch_idx:
+@@ -755,6 +756,7 @@ err:
+ 		kfree(path);
+ 	return ERR_PTR(-EIO);
+ }
++EXPORT_SYMBOL(ext4_ext_find_extent);
+
+ /*
+  * ext4_ext_insert_index:
+@@ -1233,9 +1235,9 @@ out:
+  * returns 0 at @phys
+  * return value contains 0 (success) or error code
+  */
+-static int ext4_ext_search_left(struct inode *inode,
+-				struct ext4_ext_path *path,
+-				ext4_lblk_t *logical, ext4_fsblk_t *phys)
++int ext4_ext_search_left(struct inode *inode,
++			 struct ext4_ext_path *path,
++			 ext4_lblk_t *logical, ext4_fsblk_t *phys)
+ {
+ 	struct ext4_extent_idx *ix;
+ 	struct ext4_extent *ex;
+@@ -1290,6 +1292,7 @@ static int ext4_ext_search_left(struct i
+ 	*phys = ext4_ext_pblock(ex) + ee_len - 1;
+ 	return 0;
+ }
++EXPORT_SYMBOL(ext4_ext_search_left);
+
+ /*
+  * search the closest allocated block to the right for *logical
+@@ -1298,9 +1301,9 @@ static int ext4_ext_search_left(struct i
+  * returns 0 at @phys
+  * return value contains 0 (success) or error code
+  */
+-static int ext4_ext_search_right(struct inode *inode,
+-				 struct ext4_ext_path *path,
+-				 ext4_lblk_t *logical, ext4_fsblk_t *phys)
++int ext4_ext_search_right(struct inode *inode,
++			  struct ext4_ext_path *path,
++			  ext4_lblk_t *logical, ext4_fsblk_t *phys)
+ {
+ 	struct buffer_head *bh = NULL;
+ 	struct ext4_extent_header *eh;
+@@ -1407,6 +1410,7 @@ got_index:
+ 	put_bh(bh);
+ 	return 0;
+ }
++EXPORT_SYMBOL(ext4_ext_search_right);
+
+ /*
+  * ext4_ext_next_allocated_block:
+@@ -1874,10 +1878,11 @@ cleanup:
+ 	ext4_ext_invalidate_cache(inode);
+ 	return err;
+ }
++EXPORT_SYMBOL(ext4_ext_insert_extent);
+
+-static int ext4_ext_walk_space(struct inode *inode, ext4_lblk_t block,
+-			       ext4_lblk_t num, ext_prepare_callback func,
+-			       void *cbdata)
++int ext4_ext_walk_space(struct inode *inode, ext4_lblk_t block,
++			ext4_lblk_t num, ext_prepare_callback func,
++			void *cbdata)
+ {
+ 	struct ext4_ext_path *path = NULL;
+ 	struct ext4_ext_cache cbex;
+@@ -1989,6 +1994,7 @@ static int ext4_ext_walk_space(struct in
+
+ 	return err;
+ }
++EXPORT_SYMBOL(ext4_ext_walk_space);
+
+ static void
+ ext4_ext_put_in_cache(struct inode *inode, ext4_lblk_t block,
+@@ -2166,6 +2172,57 @@ static int ext4_ext_rm_idx(handle_t *han
+ }
+
+ /*
++ * This routine returns max. credits extent tree can consume.
++ * It should be OK for low-performance paths like ->writepage()
++ * To allow many writing process to fit a single transaction,
++ * caller should calculate credits under truncate_mutex and
++ * pass actual path.
++ */
++int ext4_ext_calc_credits_for_insert(struct inode *inode,
++				    struct ext4_ext_path *path)
++{
++	int depth, needed;
++
++	if (path) {
++		/* probably there is space in leaf? */
++		depth = ext_depth(inode);
++		if (le16_to_cpu(path[depth].p_hdr->eh_entries)
++				< le16_to_cpu(path[depth].p_hdr->eh_max))
++			return 1;
++	}
++
++	/*
++	 * given 32bit logical block (4294967296 blocks), max. tree
++	 * can be 4 levels in depth -- 4 * 340^4 == 53453440000.
++	 * let's also add one more level for imbalance.
++	 */
++	depth = 5;
++
++	/* allocation of new data block(s) */
++	needed = 2;
++
++	/*
++	 * tree can be full, so it'd need to grow in depth:
++	 * we need one credit to modify old root, credits for
++	 * new root will be added in split accounting
++	 */
++	needed += 1;
++
++	/*
++	 * Index split can happen, we'd need:
++	 *    allocate intermediate indexes (bitmap + group)
++	 *  + change two blocks at each level, but root (already included)
++	 */
++	needed += (depth * 2) + (depth * 2);
++
++	/* any allocation modifies superblock */
++	needed += 1;
++
++	return needed;
++}
++EXPORT_SYMBOL(ext4_ext_calc_credits_for_insert);
++
++/*
+  * ext4_ext_calc_credits_for_single_extent:
+  * This routine returns max. credits that needed to insert an extent
+  * to the extent tree.
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -5102,6 +5102,7 @@ bad_inode:
+ 	iget_failed(inode);
+ 	return ERR_PTR(ret);
+ }
++EXPORT_SYMBOL(ext4_iget);
+
+ static int ext4_inode_blocks_set(handle_t *handle,
+ 				struct ext4_inode *raw_inode,
+@@ -5768,6 +5769,7 @@ int ext4_mark_inode_dirty(handle_t *hand
+ 		err = ext4_mark_iloc_dirty(handle, inode, &iloc);
+ 	return err;
+ }
++EXPORT_SYMBOL(ext4_mark_inode_dirty);
+
+ /*
+  * ext4_dirty_inode() is called from __mark_inode_dirty()
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -4049,6 +4049,7 @@ repeat:
+ 		call_rcu(&(pa)->u.pa_rcu, ext4_mb_pa_callback);
+ 	}
+ }
++EXPORT_SYMBOL(ext4_discard_preallocations);
+
+ #ifdef CONFIG_EXT4_DEBUG
+ static void ext4_mb_show_ac(struct ext4_allocation_context *ac)
+@@ -4562,6 +4563,7 @@ out:
+
+ 	return block;
+ }
++EXPORT_SYMBOL(ext4_mb_new_blocks);
+
+ /*
+  * We can merge two free data extents only if the physical blocks
+@@ -4861,6 +4863,7 @@ error_return:
+ 	ext4_std_error(sb, err);
+ 	return;
+ }
++EXPORT_SYMBOL(ext4_free_blocks);
+
+ /**
+  * ext4_add_groupblocks() -- Add given blocks to an existing group
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -127,6 +127,7 @@ ext4_fsblk_t ext4_inode_bitmap(struct su
+ 		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
+ 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
+ }
++EXPORT_SYMBOL(ext4_inode_bitmap);
+
+ ext4_fsblk_t ext4_inode_table(struct super_block *sb,
+ 			      struct ext4_group_desc *bg)
+@@ -1300,6 +1301,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock, Opt_bigendian_extents,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
++	Opt_mballoc,
+ };
+
+ static const match_table_t tokens = {
+@@ -1376,6 +1378,7 @@ static const match_table_t tokens = {
+ 	{Opt_init_itable, "init_itable=%u"},
+ 	{Opt_init_itable, "init_itable"},
+ 	{Opt_noinit_itable, "noinit_itable"},
++	{Opt_mballoc, "mballoc"},
+ 	{Opt_err, NULL},
+ };
+
+@@ -1869,6 +1872,8 @@ set_qf_format:
+ 		case Opt_noinit_itable:
+ 			clear_opt(sb, INIT_INODE_TABLE);
+ 			break;
++		case Opt_mballoc:
++			break;
+ 		default:
+ 			ext4_msg(sb, KERN_ERR,
+ 			       "Unrecognized mount option \"%s\" "
+@@ -4937,6 +4942,8 @@ static struct file_system_type ext4_fs_t
+ 	.fs_flags	= FS_REQUIRES_DEV,
+ };
+
++MODULE_ALIAS("ext4");
++
+ static int __init ext4_init_feat_adverts(void)
+ {
+ 	struct ext4_features *ef;
