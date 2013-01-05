@@ -1366,13 +1366,13 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr)
         if (op_data == NULL)
                 RETURN(-ENOMEM);
 
-        UNLOCK_INODE_MUTEX(inode);
-        if (ia_valid & ATTR_SIZE)
-                UP_WRITE_I_ALLOC_SEM(inode);
-        cfs_down_write(&lli->lli_trunc_sem);
-        LOCK_INODE_MUTEX(inode);
-        if (ia_valid & ATTR_SIZE)
-                DOWN_WRITE_I_ALLOC_SEM(inode);
+	mutex_unlock(&inode->i_mutex);
+	if (ia_valid & ATTR_SIZE)
+		UP_WRITE_I_ALLOC_SEM(inode);
+	cfs_down_write(&lli->lli_trunc_sem);
+	mutex_lock(&inode->i_mutex);
+	if (ia_valid & ATTR_SIZE)
+		DOWN_WRITE_I_ALLOC_SEM(inode);
 
         memcpy(&op_data->op_attr, attr, sizeof(*attr));
 
