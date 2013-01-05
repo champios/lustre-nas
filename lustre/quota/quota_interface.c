@@ -70,7 +70,7 @@
 #ifdef HAVE_QUOTA_SUPPORT
 
 static cfs_time_t last_print = 0;
-static cfs_spinlock_t last_print_lock = CFS_SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(last_print_lock);
 
 static int filter_quota_setup(struct obd_device *obd)
 {
