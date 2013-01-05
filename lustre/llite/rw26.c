@@ -558,7 +558,9 @@ struct address_space_operations ll_aops = {
         .writepage      = ll_writepage,
         .writepages     = generic_writepages,
         .set_page_dirty = ll_set_page_dirty,
+#ifdef HAVE_AOP_SYNC_PAGE
         .sync_page      = NULL,
+#endif
 #ifdef HAVE_KERNEL_WRITE_BEGIN_END
         .write_begin    = ll_write_begin,
         .write_end      = ll_write_end,
