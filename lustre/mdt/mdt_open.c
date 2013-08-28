@@ -1175,6 +1175,9 @@ static int mdt_open_anon_by_fid(struct mdt_thread_info *info,
         if (flags & MDS_OPEN_LOCK)
                 mdt_set_disposition(info, rep, DISP_OPEN_LOCK);
         rc = mdt_finish_open(info, parent, o, flags, 0, rep);
+	/* openlock will be released if mdt_finish_open failed */
+	if (flags & MDS_OPEN_LOCK)
+		mdt_clear_disposition(info, rep, DISP_OPEN_LOCK);
 
         if (!(flags & MDS_OPEN_LOCK) || rc)
                 mdt_object_unlock(info, o, lhc, 1);
@@ -1494,13 +1497,12 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                 rc = mdt_object_lock(info, child, lhc,
                                      MDS_INODELOCK_LOOKUP | MDS_INODELOCK_OPEN,
                                      MDT_CROSS_LOCK);
-                if (rc) {
-                        result = rc;
-                        GOTO(out_child, result);
-                } else {
-                        result = -EREMOTE;
-                        mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
-                }
+		if (rc) {
+			result = rc;
+			GOTO(out_child, result);
+		} else {
+			mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
+		}
         }
 
         /* Try to open it now. */
@@ -1508,6 +1510,10 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                              created, ldlm_rep);
         if (rc) {
                 result = rc;
+		/* openlock will be released if mdt_finish_open failed */
+		if (create_flags & MDS_OPEN_LOCK)
+			mdt_clear_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
+
                 if (lustre_handle_is_used(&lhc->mlh_reg_lh))
                         /* openlock was acquired and mdt_finish_open failed -
                            drop the openlock */
@@ -1532,8 +1538,8 @@ out_child:
 out_parent:
         mdt_object_unlock_put(info, parent, lh, result || !created);
 out:
-        if (result && result != -EREMOTE)
-                lustre_msg_set_transno(req->rq_repmsg, 0);
+	if (result)
+		lustre_msg_set_transno(req->rq_repmsg, 0);
         return result;
 }
 
