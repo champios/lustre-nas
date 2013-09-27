@@ -1497,8 +1497,10 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
                 if (rc) {
                         result = rc;
                         GOTO(out_child, result);
-		} else
-			mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
+                } else {
+                        result = -EREMOTE;
+                        mdt_set_disposition(info, ldlm_rep, DISP_OPEN_LOCK);
+                }
         }
 
         /* Try to open it now. */
@@ -1530,9 +1532,9 @@ out_child:
 out_parent:
         mdt_object_unlock_put(info, parent, lh, result || !created);
 out:
-	if (result)
-		lustre_msg_set_transno(req->rq_repmsg, 0);
-	return result;
+        if (result && result != -EREMOTE)
+                lustre_msg_set_transno(req->rq_repmsg, 0);
+        return result;
 }
 
 #define MFD_CLOSED(mode) (((mode) & ~(FMODE_EPOCH | FMODE_SOM | \
