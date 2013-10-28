@@ -248,19 +248,18 @@ static inline void qmt_restore(struct lquota_entry *lqe,
 		(slv) -= (cnt);              \
 	} while (0)
 
-/* helper routine returning true when the id has run out of quota space, which
- * means that it has either:
- * - reached hardlimit
+/* helper routine returning non-zero when the id has run out of quota space:
+ * 1 - reached hardlimit
  * OR
- * - reached softlimit and grace time expired already */
-static inline bool qmt_space_exhausted(struct lquota_entry *lqe, __u64 now)
+ * 2 - reached softlimit and grace time expired already */
+static inline int qmt_space_exhausted(struct lquota_entry *lqe, __u64 now)
 {
 	if (lqe->lqe_hardlimit != 0 && lqe->lqe_granted >= lqe->lqe_hardlimit)
-		return true;
+		return 1;
 	if (lqe->lqe_softlimit != 0 && lqe->lqe_granted > lqe->lqe_softlimit &&
 	    lqe->lqe_gracetime != 0 && now >= lqe->lqe_gracetime)
-		return true;
-	return false;
+		return 2;
+	return 0;
 }
 
 /* number of seconds to wait for slaves to release quota space after
