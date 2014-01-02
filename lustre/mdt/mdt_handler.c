@@ -3627,26 +3627,24 @@ static void mdt_intent_fixup_resent(struct mdt_thread_info *info,
 	/* In the function below, .hs_keycmp resolves to
 	 * ldlm_export_lock_keycmp() */
 	/* coverity[overrun-buffer-val] */
-	lock = cfs_hash_lookup(exp->exp_lock_hash, &remote_hdl);
-	if (lock) {
-		lock_res_and_lock(lock);
-		if (lock != new_lock) {
-			lh->mlh_reg_lh.cookie = lock->l_handle.h_cookie;
-			lh->mlh_reg_mode = lock->l_granted_mode;
+        lock = cfs_hash_lookup(exp->exp_lock_hash, &remote_hdl);
+        if (lock) {
+                if (lock != new_lock) {
+                        lh->mlh_reg_lh.cookie = lock->l_handle.h_cookie;
+                        lh->mlh_reg_mode = lock->l_granted_mode;
 
-			LDLM_DEBUG(lock, "Restoring lock cookie");
-			DEBUG_REQ(D_DLMTRACE, req,
-				  "restoring lock cookie "LPX64,
-				  lh->mlh_reg_lh.cookie);
-			if (old_lock)
-				*old_lock = LDLM_LOCK_GET(lock);
-			cfs_hash_put(exp->exp_lock_hash, &lock->l_exp_hash);
-			unlock_res_and_lock(lock);
-			return;
-		}
-		cfs_hash_put(exp->exp_lock_hash, &lock->l_exp_hash);
-		unlock_res_and_lock(lock);
-	}
+                        LDLM_DEBUG(lock, "Restoring lock cookie");
+                        DEBUG_REQ(D_DLMTRACE, req,
+                                  "restoring lock cookie "LPX64,
+                                  lh->mlh_reg_lh.cookie);
+                        if (old_lock)
+                                *old_lock = LDLM_LOCK_GET(lock);
+                        cfs_hash_put(exp->exp_lock_hash, &lock->l_exp_hash);
+                        return;
+                }
+
+                cfs_hash_put(exp->exp_lock_hash, &lock->l_exp_hash);
+        }
 
         /*
          * If the xid matches, then we know this is a resent request, and allow
