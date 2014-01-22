@@ -465,8 +465,6 @@ static int qsd_acquire_local(struct lquota_entry *lqe, __u64 space)
 		lqe->lqe_pending_write += space;
 		lqe->lqe_waiting_write -= space;
 		rc = 0;
-	} else if (lqe->lqe_edquot) {
-		rc = -EDQUOT;
 	} else {
 		rc = -EAGAIN;
 	}
