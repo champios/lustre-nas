@@ -204,8 +204,7 @@ struct ll_inode_info {
 
 		/* for non-directory */
 		struct {
-			struct semaphore		f_size_sem;
-			void				*f_size_sem_owner;
+			struct mutex			f_size_mutex;
 			char				*f_symlink_name;
 			__u64				f_maxbytes;
 			/*
@@ -240,10 +239,9 @@ struct ll_inode_info {
 			 * accurate if the file is shared by different jobs.
 			 */
 			char                     f_jobid[JOBSTATS_JOBID_SIZE];
-                } f;
+		} f;
 
-#define lli_size_sem            u.f.f_size_sem
-#define lli_size_sem_owner      u.f.f_size_sem_owner
+#define lli_size_mutex          u.f.f_size_mutex
 #define lli_symlink_name        u.f.f_symlink_name
 #define lli_maxbytes            u.f.f_maxbytes
 #define lli_trunc_sem           u.f.f_trunc_sem
@@ -281,7 +279,7 @@ struct ll_inode_info {
  * Locking to guarantee consistency of non-atomic updates to long long i_size,
  * consistency between file size and KMS.
  *
- * Implemented by ->lli_size_sem and ->lsm_lock, nested in that order.
+ * Implemented by ->lli_size_mutex and ->lsm_lock, nested in that order.
  */
 
 void ll_inode_size_lock(struct inode *inode);
@@ -1444,8 +1442,8 @@ static inline void cl_isize_unlock(struct inode *inode)
 
 static inline void cl_isize_write_nolock(struct inode *inode, loff_t kms)
 {
-        LASSERT_SEM_LOCKED(&ll_i2info(inode)->lli_size_sem);
-        i_size_write(inode, kms);
+	LASSERT(mutex_is_locked(&ll_i2info(inode)->lli_size_mutex));
+	i_size_write(inode, kms);
 }
 
 static inline void cl_isize_write(struct inode *inode, loff_t kms)
