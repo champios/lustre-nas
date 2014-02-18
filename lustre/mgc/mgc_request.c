@@ -636,14 +636,14 @@ static int mgc_fs_setup(struct obd_device *obd, struct super_block *sb,
         LASSERT(lsi);
         LASSERT(lsi->lsi_srv_mnt == mnt);
 
-        /* The mgc fs exclusion sem. Only one fs can be setup at a time. */
-	down(&cli->cl_mgc_sem);
+	/* The mgc fs exclusion mutex. Only one fs can be setup at a time. */
+	mutex_lock(&cli->cl_mgc_mutex);
 
         cfs_cleanup_group_info();
 
 	obd->obd_fsops = fsfilt_get_ops(lsi->lsi_fstype);
         if (IS_ERR(obd->obd_fsops)) {
-		up(&cli->cl_mgc_sem);
+		mutex_unlock(&cli->cl_mgc_mutex);
 		CERROR("%s: No fstype %s: rc = %ld\n", lsi->lsi_fstype,
 		       obd->obd_name, PTR_ERR(obd->obd_fsops));
                 RETURN(PTR_ERR(obd->obd_fsops));
@@ -679,14 +679,14 @@ static int mgc_fs_setup(struct obd_device *obd, struct super_block *sb,
         if (label)
                 CDEBUG(D_MGC, "MGC using disk labelled=%s\n", label);
 
-        /* We keep the cl_mgc_sem until mgc_fs_cleanup */
+        /* We keep the cl_mgc_mutex until mgc_fs_cleanup */
         RETURN(0);
 
 err_ops:
         fsfilt_put_ops(obd->obd_fsops);
         obd->obd_fsops = NULL;
         cli->cl_mgc_vfsmnt = NULL;
-	up(&cli->cl_mgc_sem);
+	mutex_unlock(&cli->cl_mgc_mutex);
         RETURN(err);
 }
 
@@ -711,7 +711,7 @@ static int mgc_fs_cleanup(struct obd_device *obd)
         if (obd->obd_fsops)
                 fsfilt_put_ops(obd->obd_fsops);
 
-	up(&cli->cl_mgc_sem);
+	mutex_unlock(&cli->cl_mgc_mutex);
 
         RETURN(rc);
 }

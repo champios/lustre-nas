@@ -510,7 +510,7 @@ struct client_obd {
         struct mdc_rpc_lock     *cl_close_lock;
 
         /* mgc datastruct */
-	struct semaphore	 cl_mgc_sem;
+	struct mutex		 cl_mgc_mutex;
         struct vfsmount         *cl_mgc_vfsmnt;
         struct dentry           *cl_mgc_configs_dir;
         cfs_atomic_t             cl_mgc_refcount;
