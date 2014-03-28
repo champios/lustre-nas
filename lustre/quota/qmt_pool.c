@@ -275,7 +275,7 @@ static void qmt_pool_free(const struct lu_env *env, struct qmt_pool_info *pool)
 	for (qtype = 0; qtype < MAXQUOTAS; qtype++) {
 		/* release lqe storing grace time */
 		if (pool->qpi_grace_lqe[qtype] != NULL)
-			lqe_putref(pool->qpi_grace_lqe[qtype]);
+			lqe_putref(pool->qpi_grace_lqe[qtype], LQE_REF_IDX_MAX);
 
 		/* release site */
 		if (pool->qpi_site[qtype] != NULL &&
@@ -567,7 +567,7 @@ int qmt_pool_prepare(const struct lu_env *env, struct qmt_device *qmt,
 
 			/* look-up quota entry storing grace time */
 			lqe = lqe_locate(env, pool->qpi_site[qtype],
-					 &qti->qti_id);
+					 &qti->qti_id, LQE_REF_IDX_MAX);
 			if (IS_ERR(lqe))
 				RETURN(PTR_ERR(lqe));
 			pool->qpi_grace_lqe[qtype] = lqe;
@@ -683,13 +683,13 @@ struct lquota_entry *qmt_pool_lqe_lookup(const struct lu_env *env,
 		/* caller wants to access grace time, no need to look up the
 		 * entry since we keep a reference on ID 0 all the time */
 		lqe = pool->qpi_grace_lqe[qtype];
-		lqe_getref(lqe);
+		lqe_getref(lqe, LQE_REF_IDX_MAX);
 		GOTO(out, 0);
 	}
 
 	/* now that we have the pool, let's look-up the quota entry in the
 	 * right quota site */
-	lqe = lqe_locate(env, pool->qpi_site[qtype], qid);
+	lqe = lqe_locate(env, pool->qpi_site[qtype], qid, LQE_REF_IDX_MAX);
 out:
 	qpi_putref(env, pool);
 	RETURN(lqe);

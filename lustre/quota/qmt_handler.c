@@ -75,7 +75,7 @@ static int qmt_get(const struct lu_env *env, struct qmt_device *qmt,
 		*time = lqe->lqe_gracetime;
 	lqe_read_unlock(lqe);
 
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_MAX);
 	RETURN(0);
 }
 
@@ -183,7 +183,7 @@ static int qmt_set(const struct lu_env *env, struct qmt_device *qmt,
 out:
 	lqe_write_unlock(lqe);
 out_nolock:
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_MAX);
 
 	if (th != NULL && !IS_ERR(th))
 		dt_trans_stop(env, qmt->qmt_child, th);
@@ -682,7 +682,7 @@ static int qmt_dqacq(const struct lu_env *env, struct lu_device *ld,
 		 * quota lock. For enqueue, the qunit value will be returned in
 		 * the LVB */
 		 repbody->qb_qunit = lqe->lqe_qunit;
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_MAX);
 	RETURN(rc);
 }
 
