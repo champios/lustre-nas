@@ -79,7 +79,7 @@ static int qsd_reint_qid(const struct lu_env *env, struct qsd_qtype_info *qqi,
 	int			 rc;
 	ENTRY;
 
-	lqe = lqe_locate(env, qqi->qqi_site, qid);
+	lqe = lqe_locate(env, qqi->qqi_site, qid, LQE_REF_IDX_REINT);
 	if (IS_ERR(lqe))
 		RETURN(PTR_ERR(lqe));
 
@@ -91,7 +91,7 @@ static int qsd_reint_qid(const struct lu_env *env, struct qsd_qtype_info *qqi,
 
 	rc = qsd_update_index(env, qqi, qid, global, 0, rec);
 out:
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_REINT);
 	RETURN(rc);
 }
 
@@ -342,7 +342,7 @@ static int qsd_reconciliation(const struct lu_env *env,
 
 		qid->qid_uid = *((__u64 *)key);
 
-		lqe = lqe_locate(env, qqi->qqi_site, qid);
+		lqe = lqe_locate(env, qqi->qqi_site, qid, LQE_REF_IDX_RECON);
 		if (IS_ERR(lqe)) {
 			CWARN("%s: failed to locate lqe. "DFID", %ld\n",
 			      qsd->qsd_svname, PFID(&qqi->qqi_fid),
@@ -354,12 +354,12 @@ static int qsd_reconciliation(const struct lu_env *env,
 		if (rc) {
 			CWARN("%s: failed to get usage. "DFID", %d\n",
 			      qsd->qsd_svname, PFID(&qqi->qqi_fid), rc);
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_RECON);
 			GOTO(out, rc);
 		}
 
 		rc = qsd_adjust(env, lqe);
-		lqe_putref(lqe);
+		lqe_putref(lqe, LQE_REF_IDX_RECON);
 		if (rc) {
 			CWARN("%s: failed to report quota. "DFID", %d\n",
 			      qsd->qsd_svname, PFID(&qqi->qqi_fid), rc);
@@ -588,7 +588,7 @@ static bool qsd_pending_updates(struct qsd_qtype_info *qqi)
 	cfs_list_for_each_entry_safe(lqe, n, &qsd->qsd_adjust_list, lqe_link) {
 		if (lqe2qqi(lqe) == qqi) {
 			cfs_list_del_init(&lqe->lqe_link);
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_ADJ);
 		}
 	}
 	spin_unlock(&qsd->qsd_adjust_lock);

@@ -86,7 +86,7 @@ static struct lquota_entry *qsd_id_ast_data_get(struct ldlm_lock *lock,
 	lock_res_and_lock(lock);
 	lqe = lock->l_ast_data;
 	if (lqe != NULL) {
-		lqe_getref(lqe);
+		lqe_getref(lqe, LQE_REF_IDX_AST);
 		if (reset)
 			lock->l_ast_data = NULL;
 	}
@@ -94,7 +94,7 @@ static struct lquota_entry *qsd_id_ast_data_get(struct ldlm_lock *lock,
 
 	if (reset && lqe != NULL)
 		/* release lqe reference hold for the lock */
-		lqe_putref(lqe);
+		lqe_putref(lqe, LQE_REF_IDX_LOCK);
 	RETURN(lqe);
 }
 
@@ -308,14 +308,14 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 		/* just local cancel (for stack clean up or eviction), don't
 		 * release quota space in this case */
 		if ((lock->l_flags & LDLM_FL_LOCAL_ONLY) != 0) {
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_AST);
 			break;
 		}
 
 		/* allocate environment */
 		OBD_ALLOC_PTR(env);
 		if (env == NULL) {
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_AST);
 			rc = -ENOMEM;
 			break;
 		}
@@ -324,7 +324,7 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 		rc = lu_env_init(env, LCT_DT_THREAD);
 		if (rc) {
 			OBD_FREE_PTR(env);
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_AST);
 			break;
 		}
 
@@ -347,7 +347,7 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 			rc = qsd_adjust(env, lqe);
 
 		/* release lqe reference grabbed by qsd_id_ast_data_get() */
-		lqe_putref(lqe);
+		lqe_putref(lqe, LQE_REF_IDX_AST);
 		lu_env_fini(env);
 		OBD_FREE_PTR(env);
 		break;
@@ -434,7 +434,7 @@ static int qsd_id_glimpse_ast(struct ldlm_lock *lock, void *data)
 
 	if (wakeup)
 		cfs_waitq_broadcast(&lqe->lqe_waiters);
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_AST);
 out:
 	req->rq_status = rc;
 	RETURN(rc);

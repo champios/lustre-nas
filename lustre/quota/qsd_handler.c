@@ -427,7 +427,7 @@ out_noadjust:
 		else
 			qsd_adjust_schedule(lqe, true, false);
 	}
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_DQACQ);
 
 	if (lvb)
 		OBD_FREE_PTR(lvb);
@@ -579,7 +579,7 @@ static int qsd_acquire_remote(const struct lu_env *env,
 	lqe_write_unlock(lqe);
 
 	/* hold a refcount until completion */
-	lqe_getref(lqe);
+	lqe_getref(lqe, LQE_REF_IDX_DQACQ);
 
 	/* fill other quota body fields */
 	qbody->qb_fid = qqi->qqi_fid;
@@ -698,11 +698,12 @@ static int qsd_op_begin0(const struct lu_env *env, struct qsd_qtype_info *qqi,
 			RETURN(0);
 	} else {
 		/* look up lquota entry associated with qid */
-		lqe = lqe_locate(env, qqi->qqi_site, &qid->lqi_id);
+		lqe = lqe_locate(env, qqi->qqi_site, &qid->lqi_id,
+				 LQE_REF_IDX_OP_BEGIN);
 		if (IS_ERR(lqe))
 			RETURN(PTR_ERR(lqe));
 		if (!lqe->lqe_enforced) {
-			lqe_putref(lqe);
+			lqe_putref(lqe, LQE_REF_IDX_OP_BEGIN);
 			RETURN(0);
 		}
 		qid->lqi_qentry = lqe;
@@ -945,7 +946,7 @@ int qsd_adjust(const struct lu_env *env, struct lquota_entry *lqe)
 	lqe_write_unlock(lqe);
 
 	/* hold a refcount until completion */
-	lqe_getref(lqe);
+	lqe_getref(lqe, LQE_REF_IDX_DQACQ);
 
 	/* fill other quota body fields */
 	qbody->qb_fid = qqi->qqi_fid;
@@ -1049,7 +1050,7 @@ static void qsd_op_end0(const struct lu_env *env, struct qsd_qtype_info *qqi,
 			 * separate thread context */
 			qsd_adjust_schedule(lqe, false, false);
 	}
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_OP_BEGIN);
 	EXIT;
 }
 
@@ -1148,7 +1149,7 @@ void qsd_op_adjust(const struct lu_env *env, struct qsd_instance *qsd,
 	}
 	read_unlock(&qsd->qsd_lock);
 
-	lqe = lqe_locate(env, qqi->qqi_site, qid);
+	lqe = lqe_locate(env, qqi->qqi_site, qid, LQE_REF_IDX_OP_ADJ);
 	if (IS_ERR(lqe)) {
 		CERROR("%s: fail to locate lqe for id:"LPU64", type:%d\n",
 		       qsd->qsd_svname, qid->qid_uid, qtype);
@@ -1164,7 +1165,7 @@ void qsd_op_adjust(const struct lu_env *env, struct qsd_instance *qsd,
 	if (adjust)
 		qsd_adjust(env, lqe);
 
-	lqe_putref(lqe);
+	lqe_putref(lqe, LQE_REF_IDX_OP_ADJ);
 	EXIT;
 }
 EXPORT_SYMBOL(qsd_op_adjust);

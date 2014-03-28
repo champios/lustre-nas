@@ -299,7 +299,7 @@ int qsd_intent_lock(const struct lu_env *env, struct obd_export *exp,
 		break;
 	case IT_QUOTA_DQACQ:
 		/* grab reference on lqe for new lock */
-		lqe_getref((struct lquota_entry *)arg);
+		lqe_getref((struct lquota_entry *)arg, LQE_REF_IDX_LOCK);
 		/* all acquire/release request are sent with no_resend and
 		 * no_delay flag */
 		req->rq_no_resend = req->rq_no_delay = 1;
