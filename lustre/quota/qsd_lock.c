@@ -296,7 +296,6 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 	case LDLM_CB_CANCELING: {
 		struct lu_env           *env;
 		struct lquota_entry	*lqe;
-		bool			 rel = false;
 
 		LDLM_DEBUG(lock, "canceling global quota lock");
 		lqe = qsd_id_ast_data_get(lock, true);
@@ -305,29 +304,6 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 
 		LQUOTA_DEBUG(lqe, "losing ID lock");
 
-		/* just local cancel (for stack clean up or eviction), don't
-		 * release quota space in this case */
-		if ((lock->l_flags & LDLM_FL_LOCAL_ONLY) != 0) {
-			lqe_putref(lqe, LQE_REF_IDX_AST);
-			break;
-		}
-
-		/* allocate environment */
-		OBD_ALLOC_PTR(env);
-		if (env == NULL) {
-			lqe_putref(lqe, LQE_REF_IDX_AST);
-			rc = -ENOMEM;
-			break;
-		}
-
-		/* initialize environment */
-		rc = lu_env_init(env, LCT_DT_THREAD);
-		if (rc) {
-			OBD_FREE_PTR(env);
-			lqe_putref(lqe, LQE_REF_IDX_AST);
-			break;
-		}
-
 		ldlm_lock2handle(lock, &lockh);
 		lqe_write_lock(lqe);
 		if (lustre_handle_equal(&lockh, &lqe->lqe_lockh)) {
@@ -335,21 +311,41 @@ static int qsd_id_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *de
 			qsd_set_qunit(lqe, 0);
 			memset(&lqe->lqe_lockh, 0, sizeof(lqe->lqe_lockh));
 			lqe->lqe_edquot = false;
-			rel = true;
 		}
 		lqe_write_unlock(lqe);
 
-		/* If there is qqacq inflight, the release will be skipped
+		/* If there is dqacq inflight, the release will be skipped
 		 * at this time, and triggered on dqacq completion later,
 		 * which means there could be a short window that slave is
 		 * holding spare grant wihtout per-ID lock. */
-		if (rel)
+
+		/* don't release quota space for local cancel (stack clean
+		 * up or eviction) */
+		if ((lock->l_flags & LDLM_FL_LOCAL_ONLY) == 0) {
+			/* allocate environment */
+			OBD_ALLOC_PTR(env);
+			if (env == NULL) {
+				lqe_putref(lqe);
+				rc = -ENOMEM;
+				break;
+			}
+
+			/* initialize environment */
+			rc = lu_env_init(env, LCT_DT_THREAD);
+			if (rc) {
+				OBD_FREE_PTR(env);
+				lqe_putref(lqe);
+				break;
+			}
+
 			rc = qsd_adjust(env, lqe);
 
+			lu_env_fini(env);
+			OBD_FREE_PTR(env);
+		}
+
 		/* release lqe reference grabbed by qsd_id_ast_data_get() */
-		lqe_putref(lqe, LQE_REF_IDX_AST);
-		lu_env_fini(env);
-		OBD_FREE_PTR(env);
+		lqe_putref(lqe);
 		break;
 	}
 	default:
