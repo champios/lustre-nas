@@ -488,7 +488,7 @@ static inline void osd_qid_set_type(struct osd_thandle *oh, int i, int type)
  * \param  env    - the environment passed by the caller
  * \param  oh     - osd transaction handle
  * \param  qi     - quota id & space required for this operation
- * \param  obj    - osd object, could be NULL when it's under create
+ * \param  allocated - dquot entry in quota accounting file has been allocated
  * \param  flags  - if the operation is write, return no user quota, no
  *                  group quota, or sync commit flags to the caller
  *
@@ -496,14 +496,12 @@ static inline void osd_qid_set_type(struct osd_thandle *oh, int i, int type)
  * \retval -ve    - failure
  */
 int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
-		    struct lquota_id_info *qi, struct osd_object *obj,
-		    bool enforce, int *flags)
+                    struct lquota_id_info *qi, bool allocated, int *flags)
 {
 	struct osd_thread_info  *info = osd_oti_get(env);
 	struct osd_device       *dev = info->oti_dev;
 	struct qsd_instance     *qsd = dev->od_quota_slave;
-	struct inode		*inode = NULL;
-	int                      i, rc = 0;
+	int                      i, rc;
 	bool                     found = false;
 	ENTRY;
 
@@ -526,11 +524,8 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
 			RETURN(-EOVERFLOW);
 		}
 
-		if (obj != NULL)
-			inode = obj->oo_inode;
 		osd_trans_declare_op(env, oh, OSD_OT_QUOTA,
-				     (inode != NULL &&
-				      inode->i_dquot[qi->lqi_type] != NULL) ?
+				     (allocated || qi->lqi_id.qid_uid == 0) ?
 				     1: LDISKFS_QUOTA_INIT_BLOCKS(osd_sb(dev)));
 
 		oh->ot_id_array[i] = qi->lqi_id.qid_uid;
@@ -543,8 +538,7 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
 		RETURN(0);
 
 	/* check quota */
-	if (enforce)
-		rc = qsd_op_begin(env, qsd, oh->ot_quota_trans, qi, flags);
+	rc = qsd_op_begin(env, qsd, oh->ot_quota_trans, qi, flags);
 	RETURN(rc);
 }
 
@@ -556,8 +550,8 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
  * \param  gid    - group id of the inode
  * \param  space  - how many blocks/inodes will be consumed/released
  * \param  oh     - osd transaction handle
- * \param  obj    - osd object, could be NULL when it's under create
  * \param  is_blk - block quota or inode quota?
+ * \param  allocated - dquot entry in quota accounting file has been allocated
  * \param  flags  - if the operation is write, return no user quota, no
  *                  group quota, or sync commit flags to the caller
  * \param force   - set to 1 when changes are performed by root user and thus
@@ -568,8 +562,7 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
  */
 int osd_declare_inode_qid(const struct lu_env *env, qid_t uid, qid_t gid,
 			  long long space, struct osd_thandle *oh,
-			  struct osd_object *obj, bool is_blk, int *flags,
-			  bool force)
+			  bool is_blk, bool allocated, int *flags, bool force)
 {
 	struct osd_thread_info  *info = osd_oti_get(env);
 	struct lquota_id_info   *qi = &info->oti_qi;
@@ -581,7 +574,7 @@ int osd_declare_inode_qid(const struct lu_env *env, qid_t uid, qid_t gid,
 	qi->lqi_type       = USRQUOTA;
 	qi->lqi_space      = space;
 	qi->lqi_is_blk     = is_blk;
-	rcu = osd_declare_qid(env, oh, qi, obj, true, flags);
+	rcu = osd_declare_qid(env, oh, qi, allocated, flags);
 
 	if (force && (rcu == -EDQUOT || rcu == -EINPROGRESS))
 		/* ignore EDQUOT & EINPROGRESS when changes are done by root */
@@ -597,7 +590,7 @@ int osd_declare_inode_qid(const struct lu_env *env, qid_t uid, qid_t gid,
 	/* and now group quota */
 	qi->lqi_id.qid_gid = gid;
 	qi->lqi_type       = GRPQUOTA;
-	rcg = osd_declare_qid(env, oh, qi, obj, true, flags);
+	rcg = osd_declare_qid(env, oh, qi, allocated, flags);
 
 	if (force && (rcg == -EDQUOT || rcg == -EINPROGRESS))
 		/* as before, ignore EDQUOT & EINPROGRESS for root */
