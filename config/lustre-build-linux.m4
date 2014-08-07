@@ -523,7 +523,7 @@ else
 				esac
 			elif test x$SUSE_KERNEL = xyes; then
 				SP=$(grep PATCHLEVEL /etc/SuSE-release | sed -e 's/.*= *//')
-				EXTRA_LNET_INCLUDE="$EXTRA_LNET_INCLUDE -DCONFIG_COMPAT_SLES_11_$SP"
+				EXTRA_LNET_INCLUDE="$EXTRA_LNET_INCLUDE -DCONFIG_COMPAT_SLES_11_$SP -DCONFIG_COMPAT_PM_QOS"
 			fi
 		fi
 		if test -n "$BACKPORT_INCLUDES"; then
