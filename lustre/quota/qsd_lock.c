@@ -86,7 +86,7 @@ static struct lquota_entry *qsd_id_ast_data_get(struct ldlm_lock *lock,
 	lock_res_and_lock(lock);
 	lqe = lock->l_ast_data;
 	if (lqe != NULL) {
-		lqe_getref(lqe, LQE_REF_IDX_AST);
+		lqe_getref(lqe);
 		if (reset)
 			lock->l_ast_data = NULL;
 	}
@@ -94,7 +94,7 @@ static struct lquota_entry *qsd_id_ast_data_get(struct ldlm_lock *lock,
 
 	if (reset && lqe != NULL)
 		/* release lqe reference hold for the lock */
-		lqe_putref(lqe, LQE_REF_IDX_LOCK);
+		lqe_putref(lqe);
 	RETURN(lqe);
 }
 
@@ -430,7 +430,7 @@ static int qsd_id_glimpse_ast(struct ldlm_lock *lock, void *data)
 
 	if (wakeup)
 		cfs_waitq_broadcast(&lqe->lqe_waiters);
-	lqe_putref(lqe, LQE_REF_IDX_AST);
+	lqe_putref(lqe);
 out:
 	req->rq_status = rc;
 	RETURN(rc);

@@ -69,7 +69,7 @@ static struct qsd_upd_rec *qsd_upd_alloc(struct qsd_qtype_info *qqi,
 	upd->qur_qqi = qqi;
 	upd->qur_lqe = lqe;
 	if (lqe)
-		lqe_getref(lqe, LQE_REF_IDX_WB);
+		lqe_getref(lqe);
 	upd->qur_qid	= *qid;
 	upd->qur_rec	= *rec;
 	upd->qur_ver	= ver;
@@ -81,7 +81,7 @@ static struct qsd_upd_rec *qsd_upd_alloc(struct qsd_qtype_info *qqi,
 static void qsd_upd_free(struct qsd_upd_rec *upd)
 {
 	if (upd->qur_lqe)
-		lqe_putref(upd->qur_lqe, LQE_REF_IDX_WB);
+		lqe_putref(upd->qur_lqe);
 	OBD_SLAB_FREE_PTR(upd, upd_kmem);
 }
 
@@ -286,8 +286,7 @@ static int qsd_process_upd(const struct lu_env *env, struct qsd_upd_rec *upd)
 	ENTRY;
 
 	if (lqe == NULL) {
-		lqe = lqe_locate(env, qqi->qqi_site, &upd->qur_qid,
-				 LQE_REF_IDX_WB);
+		lqe = lqe_locate(env, qqi->qqi_site, &upd->qur_qid);
 		if (IS_ERR(lqe))
 			GOTO(out, rc = PTR_ERR(lqe));
 	}
@@ -310,7 +309,7 @@ static int qsd_process_upd(const struct lu_env *env, struct qsd_upd_rec *upd)
 			      upd->qur_ver, &upd->qur_rec);
 out:
 	if (lqe && !IS_ERR(lqe)) {
-		lqe_putref(lqe, LQE_REF_IDX_WB);
+		lqe_putref(lqe);
 		upd->qur_lqe = NULL;
 	}
 	RETURN(rc);
@@ -328,7 +327,7 @@ void qsd_adjust_schedule(struct lquota_entry *lqe, bool defer, bool cancel)
 	}
 	read_unlock(&qsd->qsd_lock);
 
-	lqe_getref(lqe, LQE_REF_IDX_ADJ);
+	lqe_getref(lqe);
 	spin_lock(&qsd->qsd_adjust_lock);
 
 	/* the lqe is being queued for the per-ID lock cancel, we should
@@ -336,7 +335,7 @@ void qsd_adjust_schedule(struct lquota_entry *lqe, bool defer, bool cancel)
 	if (!cfs_list_empty(&lqe->lqe_link) &&
 	    lqe->lqe_adjust_time == 0) {
 		cfs_list_del_init(&lqe->lqe_link);
-		lqe_putref(lqe, LQE_REF_IDX_ADJ);
+		lqe_putref(lqe);
 	}
 
 	if (cfs_list_empty(&lqe->lqe_link)) {
@@ -359,7 +358,7 @@ void qsd_adjust_schedule(struct lquota_entry *lqe, bool defer, bool cancel)
 	if (added)
 		cfs_waitq_signal(&qsd->qsd_upd_thread.t_ctl_waitq);
 	else
-		lqe_putref(lqe, LQE_REF_IDX_ADJ);
+		lqe_putref(lqe);
 }
 
 /* return true if there is pending writeback records or the pending
@@ -479,7 +478,7 @@ static int qsd_upd_thread(void *arg)
 					qsd_adjust(env, lqe);
 			}
 
-			lqe_putref(lqe, LQE_REF_IDX_ADJ);
+			lqe_putref(lqe);
 			spin_lock(&qsd->qsd_adjust_lock);
 		}
 		spin_unlock(&qsd->qsd_adjust_lock);
@@ -563,7 +562,7 @@ static void qsd_cleanup_adjust(struct qsd_instance *qsd)
 		lqe = cfs_list_entry(qsd->qsd_adjust_list.next,
 				     struct lquota_entry, lqe_link);
 		cfs_list_del_init(&lqe->lqe_link);
-		lqe_putref(lqe, LQE_REF_IDX_ADJ);
+		lqe_putref(lqe);
 	}
 	spin_unlock(&qsd->qsd_adjust_lock);
 }

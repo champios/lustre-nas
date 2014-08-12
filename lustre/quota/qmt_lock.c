@@ -101,13 +101,13 @@ int qmt_intent_policy(const struct lu_env *env, struct lu_device *ld,
 
 		lqe = res->lr_lvb_data;
 		LASSERT(lqe != NULL);
-		lqe_getref(lqe, LQE_REF_IDX_MAX);
+		lqe_getref(lqe);
 
 		/* acquire quota space */
 		rc = qmt_dqacq0(env, lqe, qmt, uuid, reqbody->qb_flags,
 				reqbody->qb_count, reqbody->qb_usage,
 				repbody);
-		lqe_putref(lqe, LQE_REF_IDX_MAX);
+		lqe_putref(lqe);
 		if (rc)
 			GOTO(out, rc);
 		break;
@@ -266,7 +266,7 @@ int qmt_lvbo_update(struct lu_device *ld, struct ldlm_resource *res,
 
 	lqe = res->lr_lvb_data;
 	LASSERT(lqe != NULL);
-	lqe_getref(lqe, LQE_REF_IDX_MAX);
+	lqe_getref(lqe);
 
 	LQUOTA_DEBUG(lqe, "releasing:"LPU64" may release:"LPU64,
 		     lvb->lvb_id_rel, lvb->lvb_id_may_rel);
@@ -327,7 +327,7 @@ out_env_init:
 out_env:
 	OBD_FREE_PTR(env);
 out_lqe:
-	lqe_putref(lqe, LQE_REF_IDX_MAX);
+	lqe_putref(lqe);
 	return rc;
 }
 
@@ -363,12 +363,12 @@ int qmt_lvbo_fill(struct lu_device *ld, struct ldlm_lock *lock, void *lvb,
 		struct lquota_entry	*lqe = res->lr_lvb_data;
 
 		/* return current qunit value & edquot flags in lvb */
-		lqe_getref(lqe, LQE_REF_IDX_MAX);
+		lqe_getref(lqe);
 		qlvb->lvb_id_qunit = lqe->lqe_qunit;
 		qlvb->lvb_flags = 0;
 		if (lqe->lqe_edquot)
 			qlvb->lvb_flags = LQUOTA_FL_EDQUOT;
-		lqe_putref(lqe, LQE_REF_IDX_MAX);
+		lqe_putref(lqe);
 	} else {
 		/* global quota lock */
 		struct lu_env		*env;
@@ -412,7 +412,7 @@ int qmt_lvbo_free(struct lu_device *ld, struct ldlm_resource *res)
 		struct lquota_entry	*lqe = res->lr_lvb_data;
 
 		/* release lqe reference */
-		lqe_putref(lqe, LQE_REF_IDX_MAX);
+		lqe_putref(lqe);
 	} else {
 		struct dt_object	*obj = res->lr_lvb_data;
 		struct lu_env		*env;
@@ -683,7 +683,7 @@ void qmt_id_lock_notify(struct qmt_device *qmt, struct lquota_entry *lqe)
 	bool	added = false;
 	ENTRY;
 
-	lqe_getref(lqe, LQE_REF_IDX_MAX);
+	lqe_getref(lqe);
 	spin_lock(&qmt->qmt_reba_lock);
 	if (!qmt->qmt_stopping && cfs_list_empty(&lqe->lqe_link)) {
 		cfs_list_add_tail(&lqe->lqe_link, &qmt->qmt_reba_list);
@@ -694,7 +694,7 @@ void qmt_id_lock_notify(struct qmt_device *qmt, struct lquota_entry *lqe)
 	if (added)
 		cfs_waitq_signal(&qmt->qmt_reba_thread.t_ctl_waitq);
 	else
-		lqe_putref(lqe, LQE_REF_IDX_MAX);
+		lqe_putref(lqe);
 	EXIT;
 }
 
@@ -750,7 +750,7 @@ static int qmt_reba_thread(void *arg)
 			if (thread_is_running(thread))
 				qmt_id_lock_glimpse(env, qmt, lqe, NULL);
 
-			lqe_putref(lqe, LQE_REF_IDX_MAX);
+			lqe_putref(lqe);
 			spin_lock(&qmt->qmt_reba_lock);
 		}
 		spin_unlock(&qmt->qmt_reba_lock);

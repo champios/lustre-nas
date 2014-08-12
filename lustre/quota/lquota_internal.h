@@ -131,20 +131,6 @@ struct lquota_slv_entry {
 	__u64			lse_acq_time;
 };
 
-enum lqe_ref_idx {
-	LQE_REF_IDX_HASH	= 0,
-	LQE_REF_IDX_DQACQ	= 1,
-	LQE_REF_IDX_LOCK	= 2,
-	LQE_REF_IDX_AST		= 3,
-	LQE_REF_IDX_WB		= 4,
-	LQE_REF_IDX_ADJ		= 5,
-	LQE_REF_IDX_OP_ADJ	= 6,
-	LQE_REF_IDX_OP_BEGIN	= 7,
-	LQE_REF_IDX_REINT	= 8,
-	LQE_REF_IDX_RECON	= 9,
-	LQE_REF_IDX_MAX		= 10,
-};
-
 /* In-memory entry for each enforced quota id
  * A lquota_entry structure belong to a single lquota_site */
 struct lquota_entry {
@@ -159,10 +145,6 @@ struct lquota_entry {
 
 	/* reference counter */
 	cfs_atomic_t		 lqe_ref;
-	/* XXX debug for LU-4249 */
-	spinlock_t		 lqe_ref_lock;
-	__u64			 lqe_add_refs[LQE_REF_IDX_MAX];
-	__u64			 lqe_drop_refs[LQE_REF_IDX_MAX];
 
 	/* linked to list of lqes which:
 	 * - need quota space adjustment on slave
@@ -230,88 +212,19 @@ struct lquota_site {
 #define LQUOTA_BUMP_VER 0x1
 #define LQUOTA_SET_VER  0x2
 
-/* debugging macros */
-#ifdef LIBCFS_DEBUG
-#define lquota_lqe_debug(msgdata, mask, cdls, lqe, fmt, a...) do {      \
-	CFS_CHECK_STACK(msgdata, mask, cdls);                           \
-									\
-	if (((mask) & D_CANTMASK) != 0 ||                               \
-	    ((libcfs_debug & (mask)) != 0 &&                            \
-	     (libcfs_subsystem_debug & DEBUG_SUBSYSTEM) != 0))          \
-		lquota_lqe_debug0(lqe, msgdata, fmt, ##a);              \
-} while (0)
-
-void lquota_lqe_debug0(struct lquota_entry *lqe,
-		       struct libcfs_debug_msg_data *data, const char *fmt, ...)
-	__attribute__ ((format (printf, 3, 4)));
-
-#define LQUOTA_DEBUG_LIMIT(mask, lqe, fmt, a...) do {                          \
-	static cfs_debug_limit_state_t _lquota_cdls;                           \
-	LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, mask, &_lquota_cdls);              \
-	lquota_lqe_debug(&msgdata, mask, &_lquota_cdls, lqe, "$$$ "fmt" ",     \
-			 ##a);                                                 \
-} while (0)
-
-#define LQUOTA_ERROR(lqe, fmt, a...) LQUOTA_DEBUG_LIMIT(D_ERROR, lqe, fmt, ## a)
-#define LQUOTA_WARN(lqe, fmt, a...) \
-	LQUOTA_DEBUG_LIMIT(D_WARNING, lqe, fmt, ## a)
-#define LQUOTA_CONSOLE(lqe, fmt, a...) \
-	LQUOTA_DEBUG_LIMIT(D_CONSOLE, lqe, fmt, ## a)
-
-#define LQUOTA_DEBUG(lock, fmt, a...) do {                                 \
-	LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, D_QUOTA, NULL);                \
-	lquota_lqe_debug(&msgdata, D_QUOTA, NULL, lqe, "$$$ "fmt" ", ##a); \
-} while (0)
-#else /* !LIBCFS_DEBUG */
-# define LQUOTA_DEBUG(lqe, fmt, a...) ((void)0)
-# define LQUOTA_ERROR(lqe, fmt, a...) ((void)0)
-# define LQUOTA_WARN(lqe, fmt, a...) ((void)0)
-# define LQUOTA_CONSOLE(lqe, fmt, a...) ((void)0)
-# define lquota_lqe_debug(cdls, level, lqe, file, func, line, fmt, a...) \
-		((void)0)
-#endif
-
 /* helper routine to get/put reference on lquota_entry */
-static inline void lqe_getref(struct lquota_entry *lqe, int idx)
+static inline void lqe_getref(struct lquota_entry *lqe)
 {
 	LASSERT(lqe != NULL);
-	LASSERTF(atomic_read(&lqe->lqe_ref) > 0,
-		 "Increment of zero reference count\n");
-	spin_lock(&lqe->lqe_ref_lock);
 	cfs_atomic_inc(&lqe->lqe_ref);
-	if (idx < LQE_REF_IDX_MAX) {
-		lqe->lqe_add_refs[idx]++;
-	}
-	spin_unlock(&lqe->lqe_ref_lock);
 }
 
-static inline void lqe_putref(struct lquota_entry *lqe, int idx)
+static inline void lqe_putref(struct lquota_entry *lqe)
 {
 	LASSERT(lqe != NULL);
 	LASSERT(atomic_read(&lqe->lqe_ref) > 0);
-
-	spin_lock(&lqe->lqe_ref_lock);
-	if (idx < LQE_REF_IDX_MAX) {
-		lqe->lqe_drop_refs[idx]++;
-	}
-	if (atomic_dec_and_test(&lqe->lqe_ref)) {
-		if (!hlist_unhashed(&lqe->lqe_hash)) {
-			int i;
-			LQUOTA_ERROR(lqe, "Freeing quota entry while it is "
-				     "still referenced in the hash!!!\n");
-			for (i = 0; i < LQE_REF_IDX_MAX; i++) {
-				CDEBUG(D_ERROR | D_CONSOLE, "index: %d, "
-				       "add refs: "LPU64", drop refs: "
-				       ""LPU64"\n", i, lqe->lqe_add_refs[i],
-				       lqe->lqe_drop_refs[i]);
-			}
-			LBUG();
-		}
-		spin_unlock(&lqe->lqe_ref_lock);
+	if (atomic_dec_and_test(&lqe->lqe_ref))
 		OBD_FREE_PTR(lqe);
-	} else {
-		spin_unlock(&lqe->lqe_ref_lock);
-	}
 }
 
 static inline int lqe_is_master(struct lquota_entry *lqe)
@@ -404,6 +317,46 @@ struct lquota_thread_info *lquota_info(const struct lu_env *env)
 #define req_is_rel(flags)    ((flags & QUOTA_DQACQ_FL_REL) != 0)
 #define req_has_rep(flags)   ((flags & QUOTA_DQACQ_FL_REPORT) != 0)
 
+/* debugging macros */
+#ifdef LIBCFS_DEBUG
+#define lquota_lqe_debug(msgdata, mask, cdls, lqe, fmt, a...) do {      \
+	CFS_CHECK_STACK(msgdata, mask, cdls);                           \
+                                                                        \
+	if (((mask) & D_CANTMASK) != 0 ||                               \
+	    ((libcfs_debug & (mask)) != 0 &&                            \
+	     (libcfs_subsystem_debug & DEBUG_SUBSYSTEM) != 0))          \
+		lquota_lqe_debug0(lqe, msgdata, fmt, ##a);              \
+} while(0)
+
+void lquota_lqe_debug0(struct lquota_entry *lqe,
+		       struct libcfs_debug_msg_data *data, const char *fmt, ...)
+	__attribute__ ((format (printf, 3, 4)));
+
+#define LQUOTA_DEBUG_LIMIT(mask, lqe, fmt, a...) do {                          \
+	static cfs_debug_limit_state_t _lquota_cdls;                           \
+	LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, mask, &_lquota_cdls);              \
+	lquota_lqe_debug(&msgdata, mask, &_lquota_cdls, lqe, "$$$ "fmt" ",     \
+			 ##a);                                                 \
+} while (0)
+
+#define LQUOTA_ERROR(lqe, fmt, a...) LQUOTA_DEBUG_LIMIT(D_ERROR, lqe, fmt, ## a)
+#define LQUOTA_WARN(lqe, fmt, a...) \
+	LQUOTA_DEBUG_LIMIT(D_WARNING, lqe, fmt, ## a)
+#define LQUOTA_CONSOLE(lqe, fmt, a...) \
+	LQUOTA_DEBUG_LIMIT(D_CONSOLE, lqe, fmt, ## a)
+
+#define LQUOTA_DEBUG(lock, fmt, a...) do {                                 \
+	LIBCFS_DEBUG_MSG_DATA_DECL(msgdata, D_QUOTA, NULL);                \
+	lquota_lqe_debug(&msgdata, D_QUOTA, NULL, lqe, "$$$ "fmt" ", ##a); \
+} while (0)
+#else /* !LIBCFS_DEBUG */
+# define LQUOTA_DEBUG(lqe, fmt, a...) ((void)0)
+# define LQUOTA_ERROR(lqe, fmt, a...) ((void)0)
+# define LQUOTA_WARN(lqe, fmt, a...) ((void)0)
+# define LQUOTA_CONSOLE(lqe, fmt, a...) ((void)0)
+# define lquota_lqe_debug(cdls, level, lqe, file, func, line, fmt, a...) \
+		((void)0)
+#endif
 
 /* lquota_lib.c */
 struct dt_object *acct_obj_lookup(const struct lu_env *, struct dt_device *,
@@ -420,7 +373,7 @@ struct lquota_site *lquota_site_alloc(const struct lu_env *, void *, bool,
 void lquota_site_free(const struct lu_env *, struct lquota_site *);
 /* quota entry operations */
 struct lquota_entry *lqe_locate(const struct lu_env *, struct lquota_site *,
-				union lquota_id *, int ref_idx);
+				union lquota_id *);
 
 /* lquota_disk.c */
 struct dt_object *lquota_disk_dir_find_create(const struct lu_env *,

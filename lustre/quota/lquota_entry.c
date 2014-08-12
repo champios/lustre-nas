@@ -70,14 +70,14 @@ static void lqe_hash_get(cfs_hash_t *hs, cfs_hlist_node_t *hnode)
 {
 	struct lquota_entry *lqe;
 	lqe = cfs_hlist_entry(hnode, struct lquota_entry, lqe_hash);
-	lqe_getref(lqe, LQE_REF_IDX_MAX);
+	lqe_getref(lqe);
 }
 
 static void lqe_hash_put_locked(cfs_hash_t *hs, cfs_hlist_node_t *hnode)
 {
 	struct lquota_entry *lqe;
 	lqe = cfs_hlist_entry(hnode, struct lquota_entry, lqe_hash);
-	lqe_putref(lqe, LQE_REF_IDX_HASH);
+	lqe_putref(lqe);
 }
 
 static void lqe_hash_exit(cfs_hash_t *hs, cfs_hlist_node_t *hnode)
@@ -314,8 +314,7 @@ static int lqe_read(const struct lu_env *env, struct lquota_entry *lqe)
  * \retval -ve   - failure
  */
 struct lquota_entry *lqe_locate(const struct lu_env *env,
-				struct lquota_site *site, union lquota_id *qid,
-				int ref_idx)
+				struct lquota_site *site, union lquota_id *qid)
 {
 	struct lquota_entry	*lqe, *new = NULL;
 	int			 rc = 0;
@@ -324,11 +323,6 @@ struct lquota_entry *lqe_locate(const struct lu_env *env,
 	lqe = cfs_hash_lookup(site->lqs_hash, (void *)&qid->qid_uid);
 	if (lqe != NULL) {
 		LASSERT(lqe->lqe_uptodate);
-		if (ref_idx < LQE_REF_IDX_MAX) {
-			spin_lock(&lqe->lqe_ref_lock);
-			lqe->lqe_add_refs[ref_idx]++;
-			spin_unlock(&lqe->lqe_ref_lock);
-		}
 		RETURN(lqe);
 	}
 
@@ -340,8 +334,6 @@ struct lquota_entry *lqe_locate(const struct lu_env *env,
 	}
 
 	atomic_set(&new->lqe_ref, 1); /* hold 1 for caller */
-	spin_lock_init(&new->lqe_ref_lock);
-	new->lqe_add_refs[LQE_REF_IDX_HASH]++;
 	new->lqe_id     = *qid;
 	new->lqe_site   = site;
 	CFS_INIT_LIST_HEAD(&new->lqe_link);
@@ -364,14 +356,7 @@ struct lquota_entry *lqe_locate(const struct lu_env *env,
 	if (lqe == new)
 		new = NULL;
 out:
-	if (new) {
-		LASSERT(atomic_read(&new->lqe_ref) == 1);
-		lqe_putref(new, LQE_REF_IDX_HASH);
-	}
-	if (!IS_ERR(lqe) && ref_idx < LQE_REF_IDX_MAX) {
-		spin_lock(&lqe->lqe_ref_lock);
-		lqe->lqe_add_refs[ref_idx]++;
-		spin_unlock(&lqe->lqe_ref_lock);
-	}
+	if (new)
+		lqe_putref(new);
 	RETURN(lqe);
 }
