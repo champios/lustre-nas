@@ -78,7 +78,7 @@ sub generate_ver($$$$$$$)
 
     # if --with-downstream-release is defined, use it.
     if ($local_version ne "") {
-        print "#define BUILD_VERSION \"$local_version\"\n";
+	print "#define BUILD_VERSION \"$env_vers-$local_version\"\n";
         print "#define KERNEL_VERSION_STRING \"$kernver\"\n";
         return 0;
     }
