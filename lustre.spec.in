@@ -64,11 +64,10 @@
 %{!?kdir:    %global kdir    /lib/modules/%{_kver}/source}
 %{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{_kver}/source" ]; then echo "/lib/modules/%{_kver}/build"; else echo "%{kdir}"; fi)}
 
-%if 0%{?suse_version} >= 1310 && %{defined _take_kobj}
-	%global _flavor %(echo %{_kver} | sed -e 's/^.*-//')
-%else
-	%global _flavor default
-%endif
+%{!?flavor:  %global flavor %(echo $flavor)}
+%{!?_flavor:  %global _flavor %(echo $flavor)}
+%{!?fullrelease:  %global fullrelease %(echo $fullrelease)}
+
 
 %if %{defined _take_kver}
 # as an alternative to this implementation we could simply "make -C $kdir kernelversion"
@@ -174,7 +173,7 @@
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
-Release: 1%{?dist}
+Release: %{fullrelease}
 License: GPL
 Group: System Environment/Kernel
 Source: lustre-%{version}.tar.gz
@@ -269,10 +268,9 @@ echo $TMPFILE
 %else
 %define preamble %{SOURCE1}
 %endif
-%kernel_module_package -n %{name} -p %preamble -f %SOURCE2 %{_flavor}
+%kernel_module_package -n %{name} -p %preamble -f %SOURCE2 %flavor
 
-%if %{with ldiskfs}
-%kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 %{_flavor}
+%kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 %flavor
 %if %{with lustre_utils}
 %package osd-ldiskfs-mount
 Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
@@ -291,7 +289,7 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %endif
 
 %if %{with zfs}
-%kernel_module_package -n %{name}-osd-zfs -p %SOURCE5 -f %SOURCE6 %{_flavor}
+%kernel_module_package -n %{name}-osd-zfs -p %SOURCE5 -f %SOURCE6 %flavor
 %if %{with lustre_utils}
 %package osd-zfs-mount
 Summary: osd-zfs-mount contains mount's zfs specific dso.
@@ -378,7 +376,7 @@ This package contains a set of test binaries and scripts that are intended
 to be used by the Lustre testing framework.
 
 %if %{with lustre_modules}
-%kernel_module_package -n %{name}-tests -f %SOURCE7 %{_flavor}
+%kernel_module_package -n %{name}-tests -f %SOURCE7 %flavor
 %endif
 %endif
 
@@ -679,6 +677,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblustreapi.la
 %endif
 # mpi
 %endif
+echo '%{modules_fs_path}/%{lustre_name}-tests/*' >>lustre-tests.files
 echo '%{_libdir}/lustre/tests/*' >>lustre-tests.files
 echo '%{_bindir}/mcreate' >>lustre-tests.files
 echo '%{_bindir}/munlink' >>lustre-tests.files
@@ -766,6 +765,11 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %config(noreplace) %{_sysconfdir}/lnet_routes.conf
 %endif
 %if %{with lustre_modules}
+%defattr(-,root,root)
+%{modules_fs_path}/%{lustre_name}/*
+%doc COPYING
+%doc ChangeLog-lustre
+%doc ChangeLog-lnet
 
 %if %{with shared}
 %if %{with ldiskfs}
