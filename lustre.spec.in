@@ -31,6 +31,9 @@
     %undefine with_zfs
 %endif
 
+%{!?flavor:  %global flavor %(echo $flavor)}
+%{!?fullrelease:  %global fullrelease %(echo $fullrelease)}
+
 %{!?version: %global version @VERSION@}
 %{!?kver:    %global kver    %(uname -r)}
 %{!?kdir:    %global kdir    /lib/modules/%{kver}/source}
@@ -102,7 +105,7 @@
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name %{lustre_name}-tests-kmp
 	%endif
-	%define krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//')
+	%define krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-nasa$//' -e 's/-nasuv$//' -e 's/-lustre[^-]*$//')
 	%if 0%{?suse_version} >= 1200
 		%global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
 	%else
@@ -130,7 +133,7 @@
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
-Release: 1%{?dist}
+Release: %{fullrelease}
 License: GPL
 Group: System Environment/Kernel
 Source: lustre-%{version}.tar.gz
@@ -201,10 +204,10 @@ echo $TMPFILE
 %else
 %define preamble %{SOURCE1}
 %endif
-%kernel_module_package -n %{name} -p %preamble -f %SOURCE2 default
+%kernel_module_package -n %{name} -p %preamble -f %SOURCE2 %flavor
 
 %if %{with ldiskfs}
-%kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 default
+%kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 %flavor
 %if %{with lustre_utils}
 %package osd-ldiskfs-mount
 Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
@@ -218,7 +221,7 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %endif	# with ldiskfs
 
 %if %{with zfs}
-%kernel_module_package -n %{name}-osd-zfs -p %SOURCE5 -f %SOURCE6 default
+%kernel_module_package -n %{name}-osd-zfs -p %SOURCE5 -f %SOURCE6 %flavor
 %if %{with lustre_utils}
 %package osd-zfs-mount
 Summary: osd-zfs-mount contains mount's zfs specific dso.
@@ -264,7 +267,7 @@ This package contains a set of test binaries and scripts that are intended
 to be used by the Lustre testing framework.
 
 %if %{with lustre_modules}
-%kernel_module_package -n %{name}-tests -f %SOURCE7 default
+%kernel_module_package -n %{name}-tests -f %SOURCE7 %flavor
 %endif
 %endif
 
@@ -478,6 +481,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblustreapi.la
 
 %if %{with lustre_tests}
 :> lustre-tests.files
+echo '%{modules_fs_path}/%{lustre_name}-tests/*' >>lustre-tests.files
 echo '%{_libdir}/lustre/tests/*' >>lustre-tests.files
 echo '%{_bindir}/mcreate' >>lustre-tests.files
 echo '%{_bindir}/munlink' >>lustre-tests.files
@@ -542,6 +546,11 @@ fi
 %config(noreplace) %{_sysconfdir}/lnet_routes.conf
 %endif
 %if %{with lustre_modules}
+%defattr(-,root,root)
+%{modules_fs_path}/%{lustre_name}/*
+%doc COPYING
+%doc ChangeLog-lustre
+%doc ChangeLog-lnet
 
 %if %{with shared}
 %if %{with ldiskfs}
