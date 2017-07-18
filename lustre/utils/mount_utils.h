@@ -83,6 +83,10 @@ extern int failover;
 /* Maximum length of on-disk parameters in the form key=<value> */
 #define PARAM_MAX		4096
 
+#ifndef MS_NOROOTWRITE
+#define MS_NOROOTWRITE (1<<15)	/* root not to write/delete user file */
+#endif
+
 #ifdef HAVE_SERVER_SUPPORT
 /* On-disk configuration file. In host-endian order. */
 struct lustre_disk_data {

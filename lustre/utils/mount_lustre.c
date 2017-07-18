@@ -194,6 +194,8 @@ static const struct opt_map opt_map[] = {
 { .opt = "rw",	    .mask = MS_RDONLY,	    .inv = 1 }, /* read-write */
 { .opt = "suid",    .mask = MS_NOSUID,	    .inv = 1 }, /* honor suid */
 { .opt = "sync",    .mask = MS_SYNCHRONOUS },		/* synchronous I/O */
+{ .opt = "rootwrite", mask = MS_NOROOTWRITE}, .inv = 1},/* root can write/delete user file */
+{ .opt = "norootwrite", mask = MS_NOROOTWRITE},		/* root not to write/delete user file */
 #ifdef MS_NODIRATIME
 { .opt = "diratime",					/* set access time */
 		    .mask = MS_NODIRATIME,  .inv = 1 },	/* on read */
