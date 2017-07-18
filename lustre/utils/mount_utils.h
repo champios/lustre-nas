@@ -81,6 +81,10 @@ extern int failover;
 /* Maximum length of on-disk parameters in the form key=<value> */
 #define PARAM_MAX		4096
 
+#ifndef MS_NOROOTWRITE
+#define MS_NOROOTWRITE (1<<15)	/* root not to write/delete user file */
+#endif
+
 /* used to describe the options to format the lustre disk, not persistent */
 struct mkfs_opts {
 	struct lustre_disk_data	mo_ldd; /* to be written in MOUNT_DATA_FILE */

@@ -188,6 +188,8 @@ static const struct opt_map opt_map[] = {
   { "async",    1, MS_SYNCHRONOUS},  /* asynchronous I/O */
   { "atime",    1, MS_NOATIME  },    /* set file access time on read */
   { "noatime",  0, MS_NOATIME  },    /* do not set file access time on read */
+  { "rootwrite", 1, MS_NOROOTWRITE}, /* root can write/delete user file */
+  { "norootwrite", 0, MS_NOROOTWRITE}, /* root not to write/delete user file */
 #ifdef MS_NODIRATIME
   { "diratime", 1, MS_NODIRATIME },  /* set file access time on read */
   { "nodiratime",0,MS_NODIRATIME },  /* do not set file access time on read */
