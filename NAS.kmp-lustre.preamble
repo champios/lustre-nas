@@ -1,0 +1,2 @@
+Obsoletes:      %{name}-modules < %{version}
+Provides:	%{requires_kmod_name} = %{requires_kmod_version}
