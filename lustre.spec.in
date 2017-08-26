@@ -205,7 +205,7 @@ echo $TMPFILE
 %else
 %define preamble %{SOURCE1}
 %endif
-%kernel_module_package -n %{name} -p %preamble -f %SOURCE2 %flavor
+%kernel_module_package -n %{name} -p NAS.kmp-lustre.preamble -f %SOURCE2 %flavor
 
 %if %{with ldiskfs}
 %kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 %flavor
@@ -268,7 +268,7 @@ This package contains a set of test binaries and scripts that are intended
 to be used by the Lustre testing framework.
 
 %if %{with lustre_modules}
-%kernel_module_package -n %{name}-tests -f %SOURCE7 %flavor
+%kernel_module_package -n %{name}-tests -p NAS.kmp-lustre-tests.preamble -f %SOURCE7 %flavor
 %endif
 %endif
 
