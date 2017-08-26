@@ -250,7 +250,7 @@ This package contains a set of test binaries and scripts that are intended
 to be used by the Lustre testing framework.
 
 %if %{with lustre_modules}
-%kernel_module_package -n %{name}-tests -f %SOURCE7 %flavor
+%kernel_module_package -n %{name}-tests -p NAS.kmp-lustre-tests.preamble -f %SOURCE7 %flavor
 %endif
 %endif
 
