@@ -177,11 +177,15 @@ static ssize_t max_dirty_mb_store(struct kobject *kobj, struct attribute *attr,
 }
 LUSTRE_RW_ATTR(max_dirty_mb);
 
+#define STRINGIFY(x)	#x
+#define MACRO(x)	STRINGIFY(x)
 static ssize_t version_show(struct kobject *kobj, struct attribute *attr,
 			    char *buf)
 {
-	return sprintf(buf, "%s\n", LUSTRE_VERSION_STRING);
+	return sprintf(buf, "lustre: %s\nkernel: %s\nbuild:  %s\n",
+		LUSTRE_VERSION_STRING, MACRO(KVER), MACRO(NAS_VER));
 }
+#undef MACRO
 
 static ssize_t pinger_show(struct kobject *kobj, struct attribute *attr,
 			   char *buf)
