@@ -3461,64 +3461,9 @@ test_77j() {
 }
 run_test 77j "check TBF-OPCode NRS policy"
 
-test_id() {
-	local idstr="${1}id"
-	local policy="${idstr}={$2}"
-	local rate="rate=$3"
-
-	do_nodes $(comma_list $(osts_nodes)) \
-		lctl set_param jobid_var=procname_uid \
-		ost.OSS.ost_io.nrs_policies="tbf\ ${idstr}" \
-		ost.OSS.ost_io.nrs_tbf_rule="start\ ost_${idstr}\ ${policy}\ ${rate}"
-		[ $? -ne 0 ] && error "failed to set tbf ${idstr} policy"
-
-	nrs_write_read "runas -$1 $2"
-	tbf_verify $3 $3 "runas -$1 $2"
-
-	do_nodes $(comma_list $(osts_nodes)) \
-		lctl set_param ost.OSS.ost_io.nrs_tbf_rule="stop\ ost_${idstr}" \
-			ost.OSS.ost_io.nrs_policies="fifo"
-
-	# sleep 3 seconds to wait the tbf policy stop completely,
-	# or the next test case is possible get -eagain when
-	# setting the tbf policy
-	sleep 3
-}
-
-test_77k(){
-	if [ $(lustre_version_code ost1) -lt $(version_code 2.10.55) ]; then
-		skip "need ost version at least 2.10.55"
-		return 0
-	fi
-	test_id "u" "500" "20"
-	test_id "g" "500" "20"
-}
-run_test 77k "check TBF-UID/GID NRS policy"
-
-cleanup_77l()
-{
-	local rule_lists=$1
-	local old_nrs=$2
-	trap 0
-
-	for rule in $rule_lists; do
-		do_nodes $(comma_list $(osts_nodes)) \
-			lctl set_param ost.OSS.ost_io.nrs_tbf_rule="stop\ $rule"
-	done
-
-	do_nodes $(comma_list $(osts_nodes)) \
-		lctl set_param ost.OSS.ost_io.nrs_policies="$old_nrs"
-
-	sleep 3
-}
-
-test_77l() {
+test_77k() {
 	[[ $(lustre_version_code ost1) -ge $(version_code 2.9.53) ]] ||
 		{ skip "Need OST version at least 2.9.53"; return 0; }
-
-	# It is expected that all of the OSTs have same nrs_policy
-	local old_nrs=$(do_facet ost1 \
-		lctl get_param ost.OSS.ost_io.nrs_policies)
 
 	do_nodes $(comma_list $(osts_nodes)) \
 		lctl set_param ost.OSS.ost_io.nrs_policies="tbf" \
@@ -3558,39 +3503,16 @@ test_77l() {
 	tbf_verify 10 10 "$RUNAS"
 	tbf_verify 20 10
 
-	trap "cleanup_77l \"ext_a ext_b\" \"$old_nrs\"" RETURN
-
-	[[ $(lustre_version_code ost1) -ge $(version_code 2.10.55) ]] ||
-		{ skip "Need OST version at least 2.10.55"; return 0; }
-
 	do_nodes $(comma_list $(osts_nodes)) \
 		lctl set_param ost.OSS.ost_io.nrs_tbf_rule="stop\ ext_a" \
 			ost.OSS.ost_io.nrs_tbf_rule="stop\ ext_b" \
-			ost.OSS.ost_io.nrs_tbf_rule="start\ ext_ug\ uid={500}\&gid={1000}\ rate=20"
+			ost.OSS.ost_io.nrs_policies="fifo"
 
-	nrs_write_read "runas -u 500 -g 1000"
-	tbf_verify 20 20 "runas -u 500 -g 1000"
-
-	do_nodes $(comma_list $(osts_nodes)) \
-		lctl set_param ost.OSS.ost_io.nrs_tbf_rule="stop\ ext_ug" \
-		ost.OSS.ost_io.nrs_tbf_rule="start\ ext_uw\ uid={500}\&opcode={ost_write}\ rate=20" \
-		ost.OSS.ost_io.nrs_tbf_rule="start\ ext_ur\ uid={500}\&opcode={ost_read}\ rate=10"
-
-	nrs_write_read "runas -u 500"
-	tbf_verify 20 10 "runas -u 500"
-
-	do_nodes $(comma_list $(osts_nodes)) \
-		lctl set_param ost.OSS.ost_io.nrs_tbf_rule="stop\ ext_uw" \
-			ost.OSS.ost_io.nrs_tbf_rule="stop\ ext_ur" \
-			ost.OSS.ost_io.nrs_tbf_rule="start\ ext_a\ uid={500},opcode={ost_write}\ rate=20" \
-			ost.OSS.ost_io.nrs_tbf_rule="start\ ext_b\ uid={500},opcode={ost_read}\ rate=10"
-	nrs_write_read "runas -u 500"
-	tbf_verify 10 10 "runas -u 500"
-	tbf_verify 20 10 "runas -u 500"
+	sleep 3
 }
-run_test 77l "check TBF policy with NID/JobID/OPCode/UID/GID expression"
+run_test 77k "check the extended TBF policy with NID/JobID/OPCode expression"
 
-test_77m() {
+test_77l() {
 	if [ $(lustre_version_code ost1) -lt $(version_code 2.9.54) ]; then
 		skip "Need OST version at least 2.9.54"
 		return 0
@@ -3640,7 +3562,7 @@ test_77m() {
 
 	return 0
 }
-run_test 77m "check NRS Delay slows write RPC processing"
+run_test 77l "check NRS Delay slows write RPC processing"
 
 test_78() { #LU-6673
 	local server_version=$(lustre_version_code ost1)
