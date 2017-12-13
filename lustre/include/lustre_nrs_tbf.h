@@ -51,21 +51,7 @@ struct nrs_tbf_jobid {
 	struct list_head tj_linkage;
 };
 
-#define MAX_U32_STR_LEN	10
-#define NRS_TBF_KEY_LEN	(LNET_NIDSTR_SIZE + LUSTRE_JOBID_SIZE + \
-			 MAX_U32_STR_LEN + MAX_U32_STR_LEN + 3 + 2)
-
-struct tbf_id {
-	__u32	ti_type;
-	__u32	ti_uid;
-	__u32	ti_gid;
-};
-
-struct nrs_tbf_id {
-	struct tbf_id		nti_id;
-	struct list_head	nti_linkage;
-};
-
+#define NRS_TBF_KEY_LEN	(LNET_NIDSTR_SIZE + LUSTRE_JOBID_SIZE + 3 + 2)
 struct nrs_tbf_client {
 	/** Resource object for policy instance. */
 	struct ptlrpc_nrs_resource	 tc_res;
@@ -77,8 +63,6 @@ struct nrs_tbf_client {
 	char				 tc_jobid[LUSTRE_JOBID_SIZE];
 	/** opcode of the client. */
 	__u32				 tc_opcode;
-	/** gid or uid of the client. */
-	struct tbf_id			tc_id;
 	/** Hash key of the client. */
 	char				 tc_key[NRS_TBF_KEY_LEN];
 	/** Reference number of the client. */
@@ -136,8 +120,6 @@ struct nrs_tbf_rule {
 	struct list_head		 tr_jobids;
 	/** Jobid list string of the rule.*/
 	char				*tr_jobids_str;
-	struct list_head		tr_ids;
-	char				*tr_ids_str;
 	/** Opcode bitmap of the rule. */
 	struct cfs_bitmap		*tr_opcodes;
 	/** Opcode list string of the rule.*/
@@ -186,8 +168,6 @@ struct nrs_tbf_ops {
 #define NRS_TBF_TYPE_NID	"nid"
 #define NRS_TBF_TYPE_OPCODE	"opcode"
 #define NRS_TBF_TYPE_GENERIC	"generic"
-#define NRS_TBF_TYPE_UID	"uid"
-#define NRS_TBF_TYPE_GID	"gid"
 #define NRS_TBF_TYPE_MAX_LEN	20
 
 enum nrs_tbf_flag {
@@ -196,8 +176,6 @@ enum nrs_tbf_flag {
 	NRS_TBF_FLAG_NID	= 0x0000002,
 	NRS_TBF_FLAG_OPCODE	= 0x0000004,
 	NRS_TBF_FLAG_GENERIC	= 0x0000008,
-	NRS_TBF_FLAG_UID	= 0x0000010,
-	NRS_TBF_FLAG_GID	= 0x0000020,
 };
 
 struct nrs_tbf_type {
@@ -292,8 +270,6 @@ struct nrs_tbf_cmd {
 			char			*ts_nids_str;
 			struct list_head	 ts_jobids;
 			char			*ts_jobids_str;
-			struct list_head	 ts_ids;
-			char			*ts_ids_str;
 			struct cfs_bitmap	*ts_opcodes;
 			char			*ts_opcodes_str;
 			struct list_head	 ts_conds;
@@ -313,8 +289,6 @@ enum nrs_tbf_field {
 	NRS_TBF_FIELD_NID,
 	NRS_TBF_FIELD_JOBID,
 	NRS_TBF_FIELD_OPCODE,
-	NRS_TBF_FIELD_UID,
-	NRS_TBF_FIELD_GID,
 	NRS_TBF_FIELD_MAX
 };
 
