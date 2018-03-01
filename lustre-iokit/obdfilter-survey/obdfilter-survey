@@ -248,10 +248,10 @@ get_lustre_version() {
 	local host=${1:-${unique_hosts[0]}}
 	local ver
 
-	ver=$(remote_shell $host "$lctl get_param -n version 2>/dev/null ||
-				$lctl lustre_build_version 2>/dev/null ||
+	ver=$(remote_shell $host "$lctl lustre_build_version 2>/dev/null ||
+				$lctl get_param -n version 2>/dev/null ||
 				$lctl --version 2>/dev/null | cut -d' ' -f2")
-	local lver=$(egrep -i "lustre: |version: " <<<$ver | head -n 1)
+	local lver=$(egrep -i "lustre: |version: " <<<"$ver" | head -n 1)
 	[ -n "$lver" ] && ver="$lver"
 
 	sed -e 's/.*: //' -e 's/^v//' -e 's/-.*//' -e 's/_/./g' <<<$ver |
