@@ -782,7 +782,14 @@ static int mdt_object_open_lock(struct mdt_thread_info *info,
 	int rc = 0;
 	ENTRY;
 
-	*ibits = 0;
+	/* We are goign to always return the lookup lock for all opens.
+	 * while it looks redundant, it does allow us to cache those
+	 * opens on the client even if nobody did an actual lookup
+	 * on them yet. Amassing multiple ones is ok since
+	 * mdc_finish_intent_lock would check and cancel any duplicates.
+	 * we already do this for layout locks returned at all times, so
+	 * no new overhead is expected. */
+	*ibits = MDS_INODELOCK_LOOKUP;
 	mdt_lock_handle_init(lhc);
 
 	if (req_is_replay(mdt_info_req(info)))
@@ -856,7 +863,9 @@ static int mdt_object_open_lock(struct mdt_thread_info *info,
 	mdt_lock_reg_init(lhc, lm);
 
 	/* one problem to return layout lock on open is that it may result
-	 * in too many layout locks cached on the client side. */
+	 * in too many layout locks cached on the client side.
+	 * But then on the other hand mdc_finish_intent_lock will cancel
+	 * all duplicates. */
 	if (!OBD_FAIL_CHECK(OBD_FAIL_MDS_NO_LL_OPEN) && try_layout) {
 		/* return lookup lock to validate inode at the client side,
 		 * this is pretty important otherwise mdt will return layout
