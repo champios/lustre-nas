@@ -398,8 +398,25 @@ static int ll_intent_file_open(struct dentry *de, void *lmm, int lmmsize,
 	}
 
 	rc = ll_prep_inode(&de->d_inode, req, NULL, itp);
-	if (!rc && itp->it_lock_mode)
+	if (!rc && itp->it_lock_mode) {
+		struct lustre_handle handle;
+		struct ldlm_lock *lock;
+		handle.cookie = itp->it_lock_handle;
+		/* If we got a lock back and it has a lookup bit set,
+		 * make sure the dentry is marked as valid so we can find it.
+		 * We don't need to care about actual hashing since other bits
+		 * of kernel will deal with that later.
+		 */
+		lock = ldlm_handle2lock(&handle);
+		if (lock) {
+			if (lock->l_policy_data.l_inodebits.bits &
+			    MDS_INODELOCK_LOOKUP)
+				d_lustre_revalidate(de);
+
+			LDLM_LOCK_PUT(lock);
+		}
 		ll_set_lock_data(sbi->ll_md_exp, de->d_inode, itp, NULL);
+	}
 
 out:
 	ptlrpc_req_finished(req);
