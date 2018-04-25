@@ -234,6 +234,10 @@ struct ll_inode_info {
 	struct rw_semaphore		lli_xattrs_list_rwsem;
 	struct mutex			lli_xattrs_enq_lock;
 	struct list_head		lli_xattrs; /* ll_xattr_entry->xe_list */
+
+	/* Counter of total opens of all types to see if we want to cache
+	 * opens of this prticular file */
+	__u32				lli_overall_open_count;
 };
 
 static inline __u32 ll_layout_version_get(struct ll_inode_info *lli)

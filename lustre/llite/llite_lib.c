@@ -897,6 +897,7 @@ void ll_lli_init(struct ll_inode_info *lli)
         lli->lli_open_fd_read_count = 0;
         lli->lli_open_fd_write_count = 0;
         lli->lli_open_fd_exec_count = 0;
+	lli->lli_overall_open_count = 0;
 	mutex_init(&lli->lli_och_mutex);
 	spin_lock_init(&lli->lli_agl_lock);
 	spin_lock_init(&lli->lli_layout_lock);

@@ -506,6 +506,11 @@ int ll_file_open(struct inode *inode, struct file *file)
 	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p), flags %o\n",
 	       PFID(ll_inode2fid(inode)), inode, file->f_flags);
 
+	/* XXX Do we need to check atime to ensure the access is recent,
+	 * or could we just depend on old inodes being quickly pruned
+	 * from the cache so all requests here are recent? */
+	lli->lli_overall_open_count++;
+
 	it = file->private_data; /* XXX: compat macro */
 	file->private_data = NULL; /* prevent ll_local_open assertion */
 
@@ -614,6 +619,13 @@ restart:
 				ldd->lld_nfs_dentry = 0;
 				it->it_flags |= MDS_OPEN_LOCK;
 			}
+
+			/* After arbitrary number of opens of this inode
+			 * we always ask for an open lock on it to handle
+			 * bad userspace actors that open and close files
+			 * in a loop for absolutely no good reason */
+			if (lli->lli_overall_open_count > 10)
+				it->it_flags |= MDS_OPEN_LOCK;
 
 			 /*
 			 * Always specify MDS_OPEN_BY_FID because we don't want
