@@ -307,8 +307,14 @@ lnet_handle2eq(struct lnet_handle_eq *handle)
 {
 	/* ALWAYS called with resource lock held */
 	struct lnet_libhandle *lh;
+	time64_t start = ktime_get_seconds();
+	unsigned long time;
 
 	lh = lnet_res_lh_lookup(&the_lnet.ln_eq_container, handle->cookie);
+	time = ktime_get_seconds() - start;
+	if (time > 5)
+		CERROR("NASA_DEBUG: took %lu seconds to lnet_res_lh_lookup()\n", time);
+
 	if (lh == NULL)
 		return NULL;
 
@@ -327,10 +333,15 @@ lnet_handle2md(struct lnet_handle_md *handle)
 	/* ALWAYS called with resource lock held */
 	struct lnet_libhandle *lh;
 	int		 cpt;
+	time64_t start = ktime_get_seconds();
+	unsigned long time;
 
 	cpt = lnet_cpt_of_cookie(handle->cookie);
 	lh = lnet_res_lh_lookup(the_lnet.ln_md_containers[cpt],
 				handle->cookie);
+	time = ktime_get_seconds() - start;
+	if (time > 5)
+		CERROR("NASA_DEBUG: took %lu seconds to lnet_res_lh_lookup()\n", time);
 	if (lh == NULL)
 		return NULL;
 
@@ -343,6 +354,8 @@ lnet_wire_handle2md(struct lnet_handle_wire *wh)
 	/* ALWAYS called with resource lock held */
 	struct lnet_libhandle *lh;
 	int		 cpt;
+	time64_t start = ktime_get_seconds();
+	unsigned long time;
 
 	if (wh->wh_interface_cookie != the_lnet.ln_interface_cookie)
 		return NULL;
@@ -350,6 +363,9 @@ lnet_wire_handle2md(struct lnet_handle_wire *wh)
 	cpt = lnet_cpt_of_cookie(wh->wh_object_cookie);
 	lh = lnet_res_lh_lookup(the_lnet.ln_md_containers[cpt],
 				wh->wh_object_cookie);
+	time = ktime_get_seconds() - start;
+	if (time > 5)
+		CERROR("NASA_DEBUG: took %lu seconds to lnet_res_lh_lookup()\n", time);
 	if (lh == NULL)
 		return NULL;
 
@@ -368,10 +384,15 @@ lnet_handle2me(struct lnet_handle_me *handle)
 	/* ALWAYS called with resource lock held */
 	struct lnet_libhandle *lh;
 	int		 cpt;
+	time64_t start = ktime_get_seconds();
+	unsigned long time;
 
 	cpt = lnet_cpt_of_cookie(handle->cookie);
 	lh = lnet_res_lh_lookup(the_lnet.ln_me_containers[cpt],
 				handle->cookie);
+	time = ktime_get_seconds() - start;
+	if (time > 5)
+		CERROR("NASA_DEBUG: took %lu seconds to lnet_res_lh_lookup()\n", time);
 	if (lh == NULL)
 		return NULL;
 
