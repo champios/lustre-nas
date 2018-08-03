@@ -522,6 +522,8 @@ struct ll_sb_info {
         int                       ll_rw_stats_on;
 
 	/* metadata stat-ahead */
+	unsigned int		  ll_sa_running_max;/* max concurrent
+						     * statahead instances */
 	unsigned int		  ll_sa_max;     /* max statahead RPCs */
 	atomic_t		  ll_sa_total;   /* statahead thread started
 						  * count */
@@ -1158,7 +1160,10 @@ void ll_ra_stats_inc(struct inode *inode, enum ra_stat which);
 
 #define LL_SA_RPC_MIN           2
 #define LL_SA_RPC_DEF           32
-#define LL_SA_RPC_MAX           8192
+#define LL_SA_RPC_MAX           512
+
+#define LL_SA_RUNNING_MAX	256
+#define LL_SA_RUNNING_DEF	16
 
 #define LL_SA_CACHE_BIT         5
 #define LL_SA_CACHE_SIZE        (1 << LL_SA_CACHE_BIT)
