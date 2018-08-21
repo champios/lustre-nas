@@ -1,0 +1,12 @@
+Index: linux-stage/fs/ext4/mmp.c
+===================================================================
+--- linux-stage.orig/fs/ext4/mmp.c
++++ linux-stage/fs/ext4/mmp.c
+@@ -12,7 +12,6 @@
+  */
+ static int write_mmp_block(struct buffer_head *bh)
+ {
+-	mark_buffer_dirty(bh);
+ 	lock_buffer(bh);
+ 	bh->b_end_io = end_buffer_write_sync;
+ 	get_bh(bh);
