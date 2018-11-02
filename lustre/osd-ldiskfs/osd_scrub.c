@@ -554,7 +554,8 @@ iget:
 		case SCRUB_NEXT_NOLMA:
 			sf->sf_flags |= SF_UPGRADE;
 			if (!(sf->sf_param & SP_DRYRUN)) {
-				rc = osd_ea_fid_set(info, inode, fid, 0, 0);
+				rc = osd_ea_fid_set(info, inode, fid,
+						     LMAC_INIT_FID, 0);
 				if (rc != 0)
 					GOTO(out, rc);
 			}
@@ -901,6 +902,15 @@ static int osd_scrub_get_fid(struct osd_thread_info *info,
 		/* For the object with normal FID, it may be MDT-object,
 		 * or may be 2.4 OST-object, need further distinguish.
 		 * Fall through to next section. */
+	}
+
+	/* if LMA is corrupted and we can't trust FID, then ignore the object
+	 * for a while and let LFSCK find it by namespace, where FID can be
+	 * found */
+	if (rc == -EOPNOTSUPP && !dev->od_is_ost) {
+		CDEBUG_LIMIT(D_LFSCK, "%s: ignore #%lu with broken LMA\n",
+			     osd_dev2name(dev), inode->i_ino);
+		return SCRUB_NEXT_CONTINUE;
 	}
 
 	if (rc == -ENODATA || rc == 0) {
