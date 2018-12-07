@@ -6251,26 +6251,6 @@ osd_dirent_check_repair(const struct lu_env *env, struct osd_object *obj,
 	dentry = osd_child_dentry_by_inode(env, dir, ent->oied_name,
 					   ent->oied_namelen);
 	rc = osd_get_lma(info, inode, dentry, &info->oti_ost_attrs);
-	if (rc == 0 && fid_is_igif(&lma->lma_self_fid)) {
-		if (lma->lma_compat & LMAC_INIT_FID) {
-			/* someone else (scrub) asked us to repair this FID */
-			CDEBUG_LIMIT(D_LFSCK, "%s: replace IGIF for "DFID"\n",
-				     osd_dev2name(dev), PFID(fid));
-			rc = -ENODATA;
-		}
-	}
-	if (rc == -EOPNOTSUPP) {
-		CDEBUG_LIMIT(D_LFSCK, "%s: broken LMA in #%lu, "DFID"\n",
-			     osd_dev2name(dev), inode->i_ino, PFID(fid));
-		if ((*attr & LUDA_VERIFY_DRYRUN) == 0) {
-			rc = __osd_xattr_set(info, inode, XATTR_NAME_LMA,
-					     NULL, 1, 0);
-			if (rc)
-				return rc;
-		}
-		rc = -ENODATA;
-	}
-
 	if (rc == -ENODATA || !fid_is_sane(&lma->lma_self_fid))
 		lma = NULL;
 	else if (rc != 0)

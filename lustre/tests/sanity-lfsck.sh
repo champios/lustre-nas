@@ -5036,46 +5036,6 @@ test_33()
 }
 run_test 33 "check LFSCK paramters"
 
-test_37()
-{
-       local rcmd="do_facet $SINGLEMDS"
-       local mntpt=$(facet_mntpt $SINGLEMDS)
-       local fid
-       local newfid
-
-       [ $(facet_fstype $SINGLEMDS) != ldiskfs ] &&
-		skip "OI Scrub not implemented for ZFS" && return
-
-       mkdir -p $DIR/$tdir
-       touch $DIR/$tdir/dummy
-       fid=$(lfs path2fid $DIR/$tdir/dummy)
-       echo "original FID: $fid"
-
-       stop $SINGLEMDS
-
-       mount_fstype $SINGLEMDS || return 1
-       # fill LMA with garbage
-       $rcmd setfattr -n trusted.lma -v "ABCDEABCDEABCDEFFFABCDEF" ${mntpt}/ROOT/$tdir/dummy
-       unmount_fstype $SINGLEMDS || return 2
-
-       start $SINGLEMDS $MDT_DEVNAME $MOUNT_OPTS_NOSCRUB > /dev/null ||
-		error "(13) Fail to start MDT0"
-
-       $START_NAMESPACE -r || error "(3) Fail to start LFSCK for namespace!"
-       wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "completed" 20 || {
-		$SHOW_NAMESPACE
-		error "(4) unexpected status"
-       }
-
-       newfid=$(lfs path2fid $DIR/$tdir/dummy)
-       echo "recovered FID: $newfid"
-       [ "$fid" = "$newfid" ] || error "original $fid != new $newfid"
-       stat  $DIR/$tdir/dummy
-}
-run_test 37 "LFSCK can find out and repair broken FID-in-LMA"
-
 # restore MDS/OST size
 MDSSIZE=${SAVED_MDSSIZE}
 OSTSIZE=${SAVED_OSTSIZE}
