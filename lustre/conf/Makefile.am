@@ -34,7 +34,7 @@
 
 EXTRA_DIST = lustre.dtd slapd-lustre.conf lustre2ldif.xsl top.ldif \
              99-lustre.rules lustre ldev.conf ko2iblnd.conf lsvcgss \
-             lnet_routes.conf lnet.conf 99-lustre-server.rules
+             lnet_routes.conf lnet.conf
 ldapconfdir = $(sysconfdir)/openldap
 
 sysconf_DATA = ldev.conf
@@ -48,9 +48,8 @@ endif
 udevrulesdir = $(sysconfdir)/udev/rules.d
 udevrules_DATA = 99-lustre.rules
 
-if SERVER
-udevrules_DATA += 99-lustre-server.rules
 if RHEL
+if SERVER
 sysconfigdir = $(sysconfdir)/sysconfig
 sysconfig_DATA = lustre lsvcgss
 endif
