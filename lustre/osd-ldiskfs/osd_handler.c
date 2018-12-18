@@ -2305,7 +2305,8 @@ static void osd_read_lock(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(obj->oo_owner != env);
 	down_read_nested(&obj->oo_sem, role);
 
-	LASSERT(obj->oo_owner == NULL);
+	LASSERTF(obj->oo_owner == NULL, "owner=%p, obj=%p\n",
+		 obj->oo_owner, obj);
 	oti->oti_r_locks++;
 }
 
