@@ -223,25 +223,53 @@ nrs_tbf_rule_find(struct nrs_tbf_head *head,
 	return rule;
 }
 
+void nrs_tbf_client2id(enum nrs_tbf_flag tif, struct nrs_tbf_client *cli,
+		       char *buf, int buf_size)
+{
+	char *str = "unknown";
+
+	switch(tif) {
+	default:
+		LBUG();
+	case NRS_TBF_FLAG_JOBID:
+	case NRS_TBF_FLAG_NID:
+	case NRS_TBF_FLAG_OPCODE:
+	case NRS_TBF_FLAG_GENERIC:
+	case NRS_TBF_FLAG_UID:
+		strncpy(buf, str, buf_size);
+		break;
+	case NRS_TBF_FLAG_GID:
+		snprintf(buf, buf_size, "%u", cli->tc_id.ti_gid);
+		break;
+	}
+}
+
 static struct nrs_tbf_rule *
 nrs_tbf_rule_match(struct nrs_tbf_head *head,
 		   struct nrs_tbf_client *cli)
 {
 	struct nrs_tbf_rule *rule = NULL;
 	struct nrs_tbf_rule *tmp_rule;
+	char id[1024];
+	enum nrs_tbf_flag tif = head->th_type_flag;
+
+	nrs_tbf_client2id(tif, cli, id, sizeof(id));
 
 	spin_lock(&head->th_rule_lock);
 	/* Match the newest rule in the list */
 	list_for_each_entry(tmp_rule, &head->th_list, tr_linkage) {
 		LASSERT((tmp_rule->tr_flags & NTRS_STOPPING) == 0);
 		if (head->th_ops->o_rule_match(tmp_rule, cli)) {
+			CERROR("rule [%s] matches ID [%s]\n", tmp_rule->tr_name, id);
 			rule = tmp_rule;
 			break;
 		}
 	}
 
-	if (rule == NULL)
+	if (rule == NULL) {
+		CERROR("no rule matches ID [%s]\n", id);
 		rule = head->th_rule;
+	}
 
 	nrs_tbf_rule_get(rule);
 	spin_unlock(&head->th_rule_lock);
@@ -1503,6 +1531,7 @@ static int ost_tbf_id_cli_set(struct ptlrpc_request *req,
 	if (body != NULL) {
 		id->ti_uid = body->oa.o_uid;
 		id->ti_gid = body->oa.o_gid;
+		CERROR("ost_tbf_id_cli_set gid: %u\n", id->ti_gid);
 		return 0;
 	}
 

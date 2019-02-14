@@ -1387,6 +1387,7 @@ no_bulk:
 	 * other process logic */
 	body->oa.o_uid = oa->o_uid;
 	body->oa.o_gid = oa->o_gid;
+	CERROR("gid %u\n", oa->o_gid);
 
 	obdo_to_ioobj(oa, ioobj);
 	ioobj->ioo_bufcnt = niocount;
