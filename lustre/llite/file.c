@@ -1575,6 +1575,9 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	ssize_t rc2;
 	__u16 refcheck;
 
+	if (!iov_iter_count(to))
+		return 0;
+
 	result = ll_do_fast_read(iocb, to);
 	if (result < 0 || iov_iter_count(to) == 0)
 		GOTO(out, result);
@@ -1669,6 +1672,9 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 
 	ENTRY;
 
+	if (!iov_iter_count(from))
+		GOTO(out, rc_normal = 0);
+
 	/* NB: we can't do direct IO for tiny writes because they use the page
 	 * cache, we can't do sync writes because tiny writes can't flush
 	 * pages, and we can't do append writes because we can't guarantee the
@@ -1753,6 +1759,9 @@ static ssize_t ll_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 	if (result)
 		RETURN(result);
 
+	if (!iov_count)
+		RETURN(0);
+
 # ifdef HAVE_IOV_ITER_INIT_DIRECTION
 	iov_iter_init(&to, READ, iov, nr_segs, iov_count);
 # else /* !HAVE_IOV_ITER_INIT_DIRECTION */
@@ -1770,7 +1779,11 @@ static ssize_t ll_file_read(struct file *file, char __user *buf, size_t count,
 	struct iovec   iov = { .iov_base = buf, .iov_len = count };
 	struct kiocb   kiocb;
 	ssize_t        result;
+
 	ENTRY;
+
+	if (!count)
+		RETURN(0);
 
 	init_sync_kiocb(&kiocb, file);
 	kiocb.ki_pos = *ppos;
@@ -1802,6 +1815,9 @@ static ssize_t ll_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	if (result)
 		RETURN(result);
 
+	if (!iov_count)
+		RETURN(0);
+
 # ifdef HAVE_IOV_ITER_INIT_DIRECTION
 	iov_iter_init(&from, WRITE, iov, nr_segs, iov_count);
 # else /* !HAVE_IOV_ITER_INIT_DIRECTION */
@@ -1822,6 +1838,9 @@ static ssize_t ll_file_write(struct file *file, const char __user *buf,
 	ssize_t        result;
 
 	ENTRY;
+
+	if (!count)
+		RETURN(0);
 
 	init_sync_kiocb(&kiocb, file);
 	kiocb.ki_pos = *ppos;
