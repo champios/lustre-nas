@@ -734,11 +734,22 @@ static unsigned int kiblnd_send_wrs(struct kib_conn *conn)
 	 * One WR for the LNet message
 	 * And ibc_max_frags for the transfer WRs
 	 */
-	unsigned int ret = 1 + conn->ibc_max_frags;
+	int ret;
+	unsigned int multiplier = 1 + conn->ibc_max_frags;
+
+	ret = multiplier * conn->ibc_queue_depth;
+
+	if (ret > conn->ibc_hdev->ibh_max_qp_wr) {
+		CDEBUG(D_NET, "peer_credits %u will result in send work "
+		       "request size %d larger than the maximum %d device "
+		       " can handle\n", conn->ibc_queue_depth, ret,
+		       conn->ibc_hdev->ibh_max_qp_wr);
+		conn->ibc_queue_depth =
+		  conn->ibc_hdev->ibh_max_qp_wr / multiplier;
+	}
 
 	/* account for a maximum of ibc_queue_depth in-flight transfers */
-	ret *= conn->ibc_queue_depth;
-	return ret;
+	return min(ret, conn->ibc_hdev->ibh_max_qp_wr);
 }
 
 kib_conn_t *
@@ -900,19 +911,14 @@ kiblnd_create_conn(kib_peer_ni_t *peer_ni, struct rdma_cm_id *cmid,
 	init_qp_attr->qp_type = IB_QPT_RC;
 	init_qp_attr->send_cq = cq;
 	init_qp_attr->recv_cq = cq;
+	/*
+	 * kiblnd_send_wrs() can change the connection's queue depth if
+	 * the maximum work request for the device is maxed out
+	 */
+	init_qp_attr->cap.max_send_wr = kiblnd_send_wrs(conn);
+	init_qp_attr->cap.max_recv_wr = IBLND_RECV_WRS(conn);
 
-	conn->ibc_sched = sched;
-
-	do {
-		init_qp_attr->cap.max_send_wr = kiblnd_send_wrs(conn);
-		init_qp_attr->cap.max_recv_wr = IBLND_RECV_WRS(conn);
-
-		rc = rdma_create_qp(cmid, conn->ibc_hdev->ibh_pd, init_qp_attr);
-		if (!rc || conn->ibc_queue_depth < 2)
-			break;
-
-		conn->ibc_queue_depth--;
-	} while (rc);
+	rc = rdma_create_qp(cmid, conn->ibc_hdev->ibh_pd, init_qp_attr);
 
 	if (rc) {
 		CERROR("Can't create QP: %d, send_wr: %d, recv_wr: %d, "
@@ -923,6 +929,8 @@ kiblnd_create_conn(kib_peer_ni_t *peer_ni, struct rdma_cm_id *cmid,
 		       init_qp_attr->cap.max_recv_sge);
 		goto failed_2;
 	}
+
+	conn->ibc_sched = sched;
 
 	if (conn->ibc_queue_depth != peer_ni->ibp_queue_depth)
 		CWARN("peer %s - queue depth reduced from %u to %u"
@@ -2571,6 +2579,7 @@ kiblnd_hdev_get_attr(kib_hca_dev_t *hdev)
 
 #ifdef HAVE_IB_DEVICE_ATTRS
 	hdev->ibh_mr_size = hdev->ibh_ibdev->attrs.max_mr_size;
+	hdev->ibh_max_qp_wr = hdev->ibh_ibdev->attrs.max_qp_wr;
 #else
         LIBCFS_ALLOC(attr, sizeof(*attr));
         if (attr == NULL) {
@@ -2579,8 +2588,10 @@ kiblnd_hdev_get_attr(kib_hca_dev_t *hdev)
         }
 
         rc = ib_query_device(hdev->ibh_ibdev, attr);
-        if (rc == 0)
+        if (rc == 0) {
                 hdev->ibh_mr_size = attr->max_mr_size;
+		hdev->ibh_max_qp_wr = attr->max_qp_wr;
+	}
 
         LIBCFS_FREE(attr, sizeof(*attr));
 
