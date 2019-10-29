@@ -291,7 +291,7 @@ static int mdd_orphan_destroy(const struct lu_env *env, struct mdd_object *obj,
 	struct thandle *th = NULL;
 	struct mdd_device *mdd = mdo2mdd(&obj->mod_obj);
 	bool orphan_exists = true;
-	int rc = 0;
+	int rc = 0, rc1 = 0;
 	ENTRY;
 
 	th = mdd_trans_create(env, mdd);
@@ -322,31 +322,26 @@ static int mdd_orphan_destroy(const struct lu_env *env, struct mdd_object *obj,
 
 	if (likely(obj->mod_count == 0)) {
 		dt_write_lock(env, mdd->mdd_orphans, MOR_TGT_ORPHAN);
-		rc = dt_delete(env, mdd->mdd_orphans, key, th);
-		if (rc) {
-			CERROR("%s: could not delete orphan "DFID": rc = %d\n",
-			       mdd2obd_dev(mdd)->obd_name, PFID(mdo2fid(obj)),
-			       rc);
-		} else if (orphan_exists) {
+		if (OBD_FAIL_CHECK(OBD_FAIL_MDS_ORPHAN_CLEANUP))
+			rc = -ENOENT;
+		else
+			rc = dt_delete(env, mdd->mdd_orphans, key, th);
+		/* We should remove object even dt_delete failed */
+		if (orphan_exists) {
 			mdo_ref_del(env, obj, th);
 			if (S_ISDIR(mdd_object_type(obj))) {
 				mdo_ref_del(env, obj, th);
 				dt_ref_del(env, mdd->mdd_orphans, th);
 			}
-			rc = mdo_destroy(env, obj, th);
-		} else {
-			CWARN("%s: orphan %s "DFID" doesn't exist\n",
-			      mdd2obd_dev(mdd)->obd_name, (char *)key,
-			      PFID(mdo2fid(obj)));
+			rc1 = mdo_destroy(env, obj, th);
 		}
 		dt_write_unlock(env, mdd->mdd_orphans);
 	}
 unlock:
 	mdd_write_unlock(env, obj);
+	mdd_trans_stop(env, mdd, 0, th);
 
-	rc = mdd_trans_stop(env, mdd, 0, th);
-
-	RETURN(rc);
+	RETURN(rc ? rc : rc1);
 }
 
 /**
@@ -415,7 +410,6 @@ static int mdd_orphan_index_iterate(const struct lu_env *env,
 	struct lu_fid fid;
 	int key_sz = 0;
 	int rc;
-	__u64 cookie;
 	ENTRY;
 
 	iops = &dor->do_index_ops->dio_it;
@@ -462,16 +456,12 @@ static int mdd_orphan_index_iterate(const struct lu_env *env,
 		}
 
 		/* kill orphan object */
-		cookie = iops->store(env, it);
 		iops->put(env, it);
 		rc = mdd_orphan_key_test_and_delete(env, mdd, &fid,
 						(struct dt_key *)ent->lde_name);
-
 		/* after index delete reset iterator */
 		if (rc == 0)
 			rc = iops->get(env, it, (const void *)"");
-		else
-			rc = iops->load(env, it, cookie);
 next:
 		rc = iops->next(env, it);
 	} while (rc == 0);
