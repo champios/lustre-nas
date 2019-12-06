@@ -88,7 +88,7 @@ struct nrs_tbf_client {
 	/** opcode of the client. */
 	__u32				 tc_opcode;
 	/** gid or uid of the client. */
-	struct tbf_id			tc_id;
+	struct tbf_id			 tc_id;
 	/** Hash key of the client. */
 	char				 tc_key[NRS_TBF_KEY_LEN];
 	/** Reference number of the client. */
@@ -131,7 +131,16 @@ struct nrs_tbf_client {
 	 * nrs_tbf_head::th_cli_hash.
 	 */
 	struct list_head		 tc_lru;
+	/** Linkage to th_cli_list. */
+	struct list_head	         tc_head_linkage;
+	/** Head belongs to. Immtuable after inited */
+	struct nrs_tbf_head		*tc_head;
 };
+
+#define NRS_TBF_STATS_OFF_MAX	ULONG_MAX
+#define NRS_TBF_STATS_OFF_MASK	0x0000ffff
+#define NRS_TBF_STATS_CPT_HP	0x00010000
+#define NRS_TBF_STATS_CPT_SHIFT	48
 
 #define MAX_TBF_NAME (16)
 
@@ -286,6 +295,14 @@ struct nrs_tbf_head {
 	 * Index of bucket on hash table while purging.
 	 */
 	int				 th_purge_start;
+	/**
+	 * Protect th_cli_list.
+	 */
+	rwlock_t			 th_cli_lock;
+	/**
+	 * List of client. Used for dumping info of clients.
+	 */
+	struct list_head		 th_cli_list;
 };
 
 enum nrs_tbf_cmd_type {
