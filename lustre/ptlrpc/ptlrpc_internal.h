@@ -182,6 +182,9 @@ int ptlrpc_nrs_policy_control(const struct ptlrpc_service *svc,
 int ptlrpc_nrs_init(void);
 void ptlrpc_nrs_fini(void);
 
+struct ptlrpc_nrs_policy *nrs_policy_find(struct ptlrpc_nrs *nrs, char *name);
+void nrs_policy_put(struct ptlrpc_nrs_policy *policy);
+
 static inline bool nrs_svcpt_has_hp(const struct ptlrpc_service_part *svcpt)
 {
 	return svcpt->scp_nrs_hp != NULL;
