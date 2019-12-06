@@ -345,7 +345,7 @@ static void nrs_policy_put_locked(struct ptlrpc_nrs_policy *policy)
 		nrs_policy_stop0(policy);
 }
 
-static void nrs_policy_put(struct ptlrpc_nrs_policy *policy)
+void nrs_policy_put(struct ptlrpc_nrs_policy *policy)
 {
 	spin_lock(&policy->pol_nrs->nrs_lock);
 	nrs_policy_put_locked(policy);
@@ -368,6 +368,20 @@ static struct ptlrpc_nrs_policy * nrs_policy_find_locked(struct ptlrpc_nrs *nrs,
 		}
 	}
 	return NULL;
+}
+
+struct ptlrpc_nrs_policy *nrs_policy_find(struct ptlrpc_nrs *nrs, char *name)
+{
+	struct ptlrpc_nrs_policy *policy;
+
+	spin_lock(&nrs->nrs_lock);
+	policy = nrs_policy_find_locked(nrs, name);
+	if (policy && policy->pol_state != NRS_POL_STATE_STARTED) {
+		nrs_policy_put_locked(policy);
+		policy = NULL;
+	}
+	spin_unlock(&nrs->nrs_lock);
+	return policy;
 }
 
 /**
