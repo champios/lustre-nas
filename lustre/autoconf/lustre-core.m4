@@ -3811,9 +3811,9 @@ lustre/kernel_patches/targets/4.4-sles12.target
 lustre/kernel_patches/targets/4.4-sles12sp3.target
 lustre/kernel_patches/targets/4.12-sles12sp4.target
 lustre/kernel_patches/targets/4.12-sles12sp5.target
-lustre/kernel_patches/targets/2.6-fc11.target
-lustre/kernel_patches/targets/2.6-fc12.target
 lustre/kernel_patches/targets/2.6-fc15.target
+lustre/kernel_patches/targets/4.12-sles15sp1.target
+lustre/kernel_patches/targets/4.12-sles15sp2.target
 lustre/kernel_patches/targets/3.x-fc18.target
 lustre/ldlm/Makefile
 lustre/fid/Makefile
