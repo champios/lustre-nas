@@ -256,12 +256,10 @@ nrs_tbf_cli_init(struct nrs_tbf_head *head,
 	struct nrs_tbf_rule *rule;
 
 	memset(cli, 0, sizeof(*cli));
-	cli->tc_head = head;
 	cli->tc_in_heap = false;
 	head->th_ops->o_cli_init(cli, req);
 	INIT_LIST_HEAD(&cli->tc_list);
 	INIT_LIST_HEAD(&cli->tc_linkage);
-	INIT_LIST_HEAD(&cli->tc_head_linkage);
 	spin_lock_init(&cli->tc_rule_lock);
 	atomic_set(&cli->tc_ref, 1);
 	rule = nrs_tbf_rule_match(head, cli);
@@ -271,18 +269,9 @@ nrs_tbf_cli_init(struct nrs_tbf_head *head,
 static void
 nrs_tbf_cli_fini(struct nrs_tbf_client *cli)
 {
-	struct nrs_tbf_head *head;
-
 	LASSERT(list_empty(&cli->tc_list));
 	LASSERT(!cli->tc_in_heap);
 	LASSERT(atomic_read(&cli->tc_ref) == 0);
-	if (!list_empty(&cli->tc_head_linkage)) {
-		head = cli->tc_rule->tr_head;
-		write_lock(&head->th_cli_lock);
-		list_del_init(&cli->tc_head_linkage);
-		write_unlock(&head->th_cli_lock);
-	}
-
 	spin_lock(&cli->tc_rule_lock);
 	nrs_tbf_cli_rule_put(cli);
 	spin_unlock(&cli->tc_rule_lock);
@@ -2815,8 +2804,6 @@ static int nrs_tbf_start(struct ptlrpc_nrs_policy *policy, char *arg)
 	atomic_set(&head->th_rule_sequence, 0);
 	spin_lock_init(&head->th_rule_lock);
 	INIT_LIST_HEAD(&head->th_list);
-	INIT_LIST_HEAD(&head->th_cli_list);
-	rwlock_init(&head->th_cli_lock);
 	hrtimer_init(&head->th_timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	head->th_timer.function = nrs_tbf_timer_cb;
 	rc = head->th_ops->o_startup(policy, head);
@@ -2858,7 +2845,6 @@ static void nrs_tbf_stop(struct ptlrpc_nrs_policy *policy)
 		nrs_tbf_rule_put(rule);
 	}
 	LASSERT(list_empty(&head->th_list));
-	LASSERT(list_empty(&head->th_cli_list));
 	LASSERT(head->th_binheap != NULL);
 	LASSERT(cfs_binheap_is_empty(head->th_binheap));
 	cfs_binheap_destroy(head->th_binheap);
@@ -3010,10 +2996,6 @@ static int nrs_tbf_res_get(struct ptlrpc_nrs_policy *policy,
 		atomic_dec(&cli->tc_ref);
 		nrs_tbf_cli_fini(cli);
 		cli = tmp;
-	} else {
-		write_lock(&head->th_cli_lock);
-		list_add_tail(&cli->tc_head_linkage, &head->th_cli_list);
-		write_unlock(&head->th_cli_lock);
 	}
 out:
 	*resp = &cli->tc_res;
@@ -3676,261 +3658,6 @@ out:
 
 LDEBUGFS_SEQ_FOPS(ptlrpc_lprocfs_nrs_tbf_rule);
 
-static struct nrs_tbf_client *
-nrs_tbf_stats_get_client_svcpt(struct ptlrpc_service_part *svcpt, bool hp,
-			       loff_t *left_offset, loff_t *new_offset)
-{
-	loff_t left = *left_offset;
-	loff_t new_off = *new_offset;
-	struct nrs_tbf_head *head;
-	struct nrs_tbf_client *client;
-	struct ptlrpc_nrs_policy *policy;
-	struct nrs_tbf_client *found = NULL;
-
-	policy = nrs_policy_find(nrs_svcpt2nrs(svcpt, hp), NRS_POL_NAME_TBF);
-	if (policy == NULL)
-		return NULL;
-
-	head = policy->pol_private;
-
-	if (left >= NRS_TBF_STATS_MAX) {
-		/* This head has been dumped, try next. */
-		left -= NRS_TBF_STATS_MAX;
-	} else {
-		read_lock(&head->th_cli_lock);
-		list_for_each_entry(client, &head->th_cli_list,
-				    tc_head_linkage) {
-			if (left == 0) {
-				found = client;
-				break;
-			}
-			left--;
-		}
-		if (found == NULL) {
-			/* find no client in the given offset, try next one */
-			read_unlock(&head->th_cli_lock);
-			left = 0;
-			*new_offset = ((new_off + NRS_TBF_STATS_MAX) /
-				       NRS_TBF_STATS_MAX * NRS_TBF_STATS_MAX);
-		}
-		/*
-		 * th_cli_lock will release later in
-		 * nrs_tbf_stats_seq_*
-		 */
-	}
-
-	nrs_policy_put(policy);
-	*left_offset = left;
-	return found;
-}
-
-static struct nrs_tbf_client *
-nrs_tbf_stats_get_client(struct ptlrpc_service *svc, loff_t *off)
-{
-	int i;
-	loff_t left = *off;
-	struct ptlrpc_service_part *svcpt;
-	bool has_hp = nrs_svc_has_hp(svc);
-	struct nrs_tbf_client *found = NULL;
-
-	ptlrpc_service_for_each_part(svcpt, i, svc) {
-		if (has_hp) {
-			found = nrs_tbf_stats_get_client_svcpt(svcpt, true,
-							       &left, off);
-			if (found)
-				break;
-		}
-
-		found = nrs_tbf_stats_get_client_svcpt(svcpt, false, &left,
-						       off);
-		if (found)
-			break;
-	}
-
-	return found;
-}
-
-static void *nrs_tbf_stats_seq_start(struct seq_file *p, loff_t *pos)
-{
-	struct ptlrpc_service *svc = p->private;
-
-	return nrs_tbf_stats_get_client(svc, pos);
-}
-
-static void nrs_tbf_stats_seq_stop(struct seq_file *p, void *v)
-{
-	struct nrs_tbf_head *head;
-	struct nrs_tbf_client *cli = (struct nrs_tbf_client *)v;
-
-	if (cli == NULL)
-		return;
-
-	head = cli->tc_head;
-
-	/*
-	 * The th_cli_lock should have been got when calling
-	 * nrs_tbf_stats_get_client(). Release it now.
-	 */
-	read_unlock(&head->th_cli_lock);
-	return;
-}
-
-static void *nrs_tbf_stats_seq_next(struct seq_file *p, void *v, loff_t *pos)
-{
-	loff_t off = *pos + 1;
-	struct list_head *next;
-	loff_t number = off % NRS_TBF_STATS_MAX;
-	struct ptlrpc_service *svc = p->private;
-	struct nrs_tbf_client *cli = (struct nrs_tbf_client *)v;
-	struct nrs_tbf_head *head = cli->tc_head;
-
-	next = cli->tc_head_linkage.next;
-	/*
-	 * Will print no more than NRS_TBF_STATS_MAX clients for each head
-	 * even client number is larger than that (which is very unlikely).
-	 * When each head starts to dump the first client, the offset should
-	 * be N * NRS_TBF_STATS_MAX. And when a head has no more client to
-	 * dump, the offset will be set to (N + 1) * NRS_TBF_STATS_MAX. In
-	 * This way, based on the offset, we are able to know what head the
-	 * dumping process has reached.
-	 */
-	if (number >= NRS_TBF_STATS_MAX || next == &head->th_cli_list) {
-		/*
-		 * The th_cli_lock should have been got when calling
-		 * nrs_tbf_stats_get_client(). Release it now.
-		 */
-		read_unlock(&head->th_cli_lock);
-		off = ((off + NRS_TBF_STATS_MAX - 1) / NRS_TBF_STATS_MAX *
-		       NRS_TBF_STATS_MAX);
-		cli = nrs_tbf_stats_get_client(svc, &off);
-	} else {
-		cli = list_entry(next, struct nrs_tbf_client, tc_head_linkage);
-	}
-	*pos = off;
-
-	return cli;
-}
-
-#define TBF_STATS_COMMON_FORMAT " %-16s "
-#define TBF_STATS_HEAD_FORMAT "-"TBF_STATS_COMMON_FORMAT
-#define TBF_STATS_FIELD_FORMAT " "TBF_STATS_COMMON_FORMAT
-
-static int nrs_tbf_stats_seq_show(struct seq_file *p, void *v)
-{
-	int i;
-	struct nrs_tbf_rule *rule;
-	struct nrs_tbf_client *cli = (struct nrs_tbf_client *)v;
-	struct nrs_tbf_head *head = cli->tc_head;
-	struct ptlrpc_nrs *nrs = head->th_res.res_policy->pol_nrs;
-	struct ptlrpc_service_part *svcpt = nrs->nrs_svcpt;
-
-	switch (head->th_type_flag) {
-	case NRS_TBF_FLAG_JOBID:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "job_id:");
-		for (i = 0; i < strlen(cli->tc_jobid); i++) {
-			if (isprint(cli->tc_jobid[i]) != 0)
-				seq_putc(p, cli->tc_jobid[i]);
-			else
-				seq_putc(p, '?');
-		}
-		seq_putc(p, '\n');
-		break;
-	case NRS_TBF_FLAG_NID:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "nid:");
-		seq_printf(p, "%s\n", libcfs_nid2str(cli->tc_nid));
-		break;
-	case NRS_TBF_FLAG_OPCODE:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "opcode:");
-		seq_printf(p, "%s\n", ll_opcode2str(cli->tc_opcode));
-		break;
-	case NRS_TBF_FLAG_GENERIC:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "key:");
-		for (i = 0; i < strlen(cli->tc_key); i++) {
-			if (isprint(cli->tc_key[i]) != 0)
-				seq_putc(p, cli->tc_key[i]);
-			else
-				seq_putc(p, '?');
-		}
-		seq_putc(p, '\n');
-		break;
-	case NRS_TBF_FLAG_UID:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "uid:");
-		seq_printf(p, "%u\n", cli->tc_id.ti_uid);
-		break;
-	case NRS_TBF_FLAG_GID:
-		seq_printf(p, TBF_STATS_HEAD_FORMAT, "gid:");
-		seq_printf(p, "%u\n", cli->tc_id.ti_gid);
-		break;
-	default:
-		CWARN("unknown NRS_TBF_FLAGS: 0x%x\n",
-		      head->th_type_flag);
-	}
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "cpt:");
-	seq_printf(p, "%d\n", svcpt->scp_cpt);
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "queue_type:");
-	if (nrs->nrs_queue_type == PTLRPC_NRS_QUEUE_REG)
-		seq_printf(p, "reg\n");
-	else
-		seq_printf(p, "hp\n");
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "refs:");
-	seq_printf(p, "%d\n", atomic_read(&cli->tc_ref));
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "rule:");
-	spin_lock(&cli->tc_rule_lock);
-	rule = cli->tc_rule;
-	if (rule == NULL)
-		seq_printf(p, "NULL\n");
-	else
-		seq_printf(p, "%s\n", rule->tr_name);
-	spin_unlock(&cli->tc_rule_lock);
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "rpc_rate:");
-	seq_printf(p, "%llu\n", cli->tc_rpc_rate);
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "ntoken:");
-	seq_printf(p, "%llu\n", cli->tc_ntoken);
-
-	seq_printf(p, TBF_STATS_FIELD_FORMAT, "token_depth:");
-	seq_printf(p, "%llu\n", cli->tc_depth);
-	return 0;
-}
-
-static const struct seq_operations nrs_tbf_stats_seq_sops = {
-	.start	= nrs_tbf_stats_seq_start,
-	.stop	= nrs_tbf_stats_seq_stop,
-	.next	= nrs_tbf_stats_seq_next,
-	.show	= nrs_tbf_stats_seq_show,
-};
-
-static int nrs_tbf_stats_seq_open(struct inode *inode, struct file *file)
-{
-	struct seq_file *seq;
-	int rc;
-
-	rc = LPROCFS_ENTRY_CHECK(inode);
-	if (rc < 0)
-		return rc;
-
-	rc = seq_open(file, &nrs_tbf_stats_seq_sops);
-	if (rc)
-		return rc;
-	seq = file->private_data;
-	seq->private = inode->i_private;
-	return 0;
-}
-
-static const struct file_operations nrs_tbf_stats_fops = {
-	.owner   = THIS_MODULE,
-	.open    = nrs_tbf_stats_seq_open,
-	.read    = seq_read,
-	.write   = NULL,
-	.llseek  = seq_lseek,
-	.release = seq_release,
-};
-
 /**
  * Initializes a TBF policy's lprocfs interface for service \a svc
  *
@@ -3944,9 +3671,6 @@ static int nrs_tbf_lprocfs_init(struct ptlrpc_service *svc)
 	struct lprocfs_vars nrs_tbf_lprocfs_vars[] = {
 		{ .name		= "nrs_tbf_rule",
 		  .fops		= &ptlrpc_lprocfs_nrs_tbf_rule_fops,
-		  .data = svc },
-		{ .name		= "nrs_tbf_stats",
-		  .fops		= &nrs_tbf_stats_fops,
 		  .data = svc },
 		{ NULL }
 	};
