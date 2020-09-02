@@ -2004,14 +2004,6 @@ int ldlm_handle_conflict_lock(struct ldlm_lock *lock, __u64 *flags,
 	    !ns_is_client(ldlm_res_to_ns(res)))
 		class_fail_export(lock->l_export);
 
-	if (rc == -ERESTART) {
-		/* We must reprocess here since if we are not the first in
-		 * line to be granted subsequent policy rerun in the caller
-		 * (ldlm_lock_enqueue_helper) will not grant any other locks
-		 *  we might be blocked upon that become grantable LU-13962 */
-		ldlm_reprocess_all(res, NULL);
-	}
-
 	lock_res(res);
 	if (rc == -ERESTART) {
 		/* 15715: The lock was granted and destroyed after
