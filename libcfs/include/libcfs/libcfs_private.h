@@ -423,6 +423,5 @@ static inline size_t cfs_round_strlen(char *fset)
 
 extern struct cfs_psdev_ops libcfs_psdev_ops;
 extern struct miscdevice libcfs_dev;
-extern struct cfs_wi_sched *cfs_sched_rehash;
 
 #endif
