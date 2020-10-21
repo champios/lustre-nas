@@ -120,6 +120,24 @@ AC_DEFUN([LB_LINUX_RELEASE], [
 		])
 	])
 
+	# Check for a ELRepo -ml kernel on RHEL 7/8
+	AS_IF([test "x$KERNEL_FOUND" = "xno"], [
+		AC_CACHE_CHECK([for ELRepo -ml kernel signature on CentOS],
+				lb_cv_mainline_kernel_sig, [
+			lb_cv_mainline_kernel_sig="no"
+			AS_IF([fgrep -q '.el7.' $LINUX_OBJ/include/generated/utsrelease.h], [
+				lb_cv_mainline_kernel_sig="yes"
+			])
+			AS_IF([fgrep -q '.el8.' $LINUX_OBJ/include/generated/utsrelease.h], [
+				lb_cv_mainline_kernel_sig="yes"
+			])
+		])
+		AS_IF([test "x$lb_cv_mainline_kernel_sig" = "xyes"], [
+			MAINLINE_KERNEL="yes"
+			KERNEL_FOUND="yes"
+		])
+	])
+
 	# If still no kernel was found, a warning is issued
 	AS_IF([test "x$KERNEL_FOUND" = "xno"], [
 		AC_MSG_WARN([Kernel Distro seems to be neither RedHat, SuSE nor Ubuntu])
@@ -132,9 +150,10 @@ AC_DEFUN([LB_LINUX_RELEASE], [
 		[KMP_MODDIR=$withval
 		 IN_KERNEL=''],[
 		AS_IF([test x$RHEL_KERNEL = xyes], [KMP_MODDIR="extra/kernel"],
-			  [test x$SUSE_KERNEL = xyes], [KMP_MODDIR="updates/kernel"],
-			  [test x$UBUNTU_KERNEL = xyes], [KMP_MODDIR="updates/kernel"],
-			  [AC_MSG_WARN([Kernel Distro seems to be neither RedHat, SuSE nor Ubuntu])]
+		      [test x$MAINLINE_KERNEL = xyes], [KMP_MODDIR="extra/kernel"],
+		      [test x$SUSE_KERNEL = xyes], [KMP_MODDIR="updates/kernel"],
+		      [test x$UBUNTU_KERNEL = xyes], [KMP_MODDIR="updates/kernel"],
+		      [AC_MSG_WARN([Kernel Distro seems to be neither RedHat, SuSE nor Ubuntu])]
 		)
 		IN_KERNEL="${PACKAGE}"])
 	AC_MSG_RESULT($KMP_MODDIR)
