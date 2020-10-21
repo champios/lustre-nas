@@ -1214,6 +1214,26 @@ cache_detail_writers_atomic, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_CACHE_DETAIL_WRITERS
 
+#
+# LIBCFS_FORCE_SIG_WITH_TASK
+#
+# kernel 5.3 commit 3cf5d076fb4d48979f382bc9452765bf8b79e740
+# signal: Remove task parameter from force_sig
+#
+AC_DEFUN([LIBCFS_FORCE_SIG_WITH_TASK], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if force_sig has task parameter],
+force_sig_with_task, [
+	#include <linux/sched/signal.h>
+],[
+	force_sig(SIGINT, NULL);
+],[
+	AC_DEFINE(HAVE_FORCE_SIG_WITH_TASK, 1,
+		[force_sig() has task parameter])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_FORCE_SIG_WITH_TASK
 
 #
 # LIBCFS_PROG_LINUX
@@ -1327,6 +1347,7 @@ LIBCFS_GET_REQUEST_KEY_AUTH
 # 5.3
 LIBCFS_LOOKUP_USER_KEY
 LIBCFS_CACHE_DETAIL_WRITERS
+LIBCFS_FORCE_SIG_WITH_TASK
 ]) # LIBCFS_PROG_LINUX
 
 #
