@@ -3200,6 +3200,28 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAS_LINUX_SELINUX_ENABLED
 
 #
+# LC_BIO_BI_PHYS_SEGMENTS
+#
+# kernel 5.3-rc1 commit 14ccb66b3f585b2bc21e7256c96090abed5a512c
+# block: remove the bi_phys_segments field in struct bio
+#
+AC_DEFUN([LC_BIO_BI_PHYS_SEGMENTS], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if struct bio has bi_phys_segments member],
+bye_bio_bi_phys_segments, [
+	#include <linux/bio.h>
+],[
+	struct bio *bio = NULL;
+	bio->bi_phys_segments++;
+],[
+	AC_DEFINE(HAVE_BIO_BI_PHYS_SEGMENTS, 1,
+		[struct bio has bi_phys_segments member])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_BIO_BI_PHYS_SEGMENTS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -3459,8 +3481,8 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 5.1
 	LC_HAS_LINUX_SELINUX_ENABLED
 
-	# 5.0
-	LC_UAPI_LINUX_MOUNT_H
+	# 5.3
+	LC_BIO_BI_PHYS_SEGMENTS
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
