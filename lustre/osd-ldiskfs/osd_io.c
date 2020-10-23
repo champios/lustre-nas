@@ -1436,7 +1436,7 @@ static int osd_is_mapped(struct dt_object *dt, __u64 offset,
 	fei.fi_extents_start = &fe;
 
 	saved_fs = get_fs();
-	set_fs(get_ds());
+	set_fs(KERNEL_DS);
 	rc = inode->i_op->fiemap(inode, &fei, offset, FIEMAP_MAX_OFFSET-offset);
 	set_fs(saved_fs);
 	if (rc != 0)
