@@ -1075,6 +1075,26 @@ timer_setup, [
 ]) # LIBCFS_TIMER_SETUP
 
 #
+# LIBCFS_HAVE_NS_TO_TIMESPEC64
+#
+# Kernel version 4.16-rc3 commit a84d1169164b274f13b97a23ff235c000efe3b49
+# introduced struct __kernel_old_timeval
+#
+AC_DEFUN([LIBCFS_HAVE_NS_TO_TIMESPEC64],[
+LB_CHECK_COMPILE([does 'ns_to_timespec64()' exist],
+kernel_old_timeval, [
+	#include <linux/time.h>
+],[
+	struct timespec64 kts;
+
+	kts = ns_to_timespec64(0);
+],[
+	AC_DEFINE(HAVE_NS_TO_TIMESPEC64, 1,
+		[ns_to_timespec64() is available])
+])
+]) # LIBCFS_HAVE_NS_TO_TIMESPEC64
+
+#
 # LIBCFS_WAIT_VAR_EVENT
 #
 # Kernel version 4.16-rc4 commit 6b2bb7265f0b62605e8caee3613449ed0db270b9
@@ -1359,6 +1379,7 @@ LIBCFS_EXPORT_SAVE_STACK_TRACE_TSK
 LIBCFS_TIMER_SETUP
 # 4.16
 LIBCFS_WAIT_VAR_EVENT
+LIBCFS_HAVE_NS_TO_TIMESPEC64
 # 4.17
 LIBCFS_CLEAR_AND_WAKE_UP_BIT
 # 4.20
