@@ -207,6 +207,7 @@ autodetect_target() {
         sles12.4) target="$(uname -r | cut -d . -f 1,2)-sles12sp4";;
         sles12.3) target="$(uname -r | cut -d . -f 1,2)-sles12sp3";;
         sles12*)  target="$(uname -r | cut -d . -f 1,2)-sles12";;
+	sles15.2) target="$(uname -r | cut -d . -f 1,2)-sles15sp2";;
           fc15)   target="2.6-fc15";;
         sles15.1) target="$(uname -r | cut -d . -f 1,2)-sles15sp1";;
         sles15.2) target="$(uname -r | cut -d . -f 1,2)-sles15sp2";;
