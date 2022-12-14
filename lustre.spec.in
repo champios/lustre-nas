@@ -270,6 +270,7 @@ echo $TMPFILE
 %endif
 %kernel_module_package -n %{name} -p NAS.kmp-lustre.preamble -f %SOURCE2 %flavor
 
+%if %{with ldiskfs}
 %kernel_module_package -n %{name}-osd-ldiskfs -p %SOURCE3 -f %SOURCE4 %flavor
 %if %{with lustre_utils}
 %package osd-ldiskfs-mount
