@@ -534,7 +534,8 @@ static int ll_dir_setdirstripe(struct dentry *dparent, struct lmv_user_md *lump,
 		/* selinux_dentry_init_security() uses dentry->d_parent and name
 		 * to determine the security context for the file. So our fake
 		 * dentry should be real enough for this purpose. */
-		err = ll_dentry_init_security(&dentry, mode, &dentry.d_name,
+		err = ll_dentry_init_security(parent,
+					      &dentry, mode, &dentry.d_name,
 					      &op_data->op_file_secctx_name,
 					      &op_data->op_file_secctx,
 					      &op_data->op_file_secctx_size);
@@ -2299,16 +2300,31 @@ out_detach:
 	case LL_IOC_ADD_ENCRYPTION_KEY:
 		if (!ll_sbi_has_encrypt(ll_i2sbi(inode)))
 			return -EOPNOTSUPP;
-		return llcrypt_ioctl_add_key(file, (void __user *)arg);
+		rc = llcrypt_ioctl_add_key(file, (void __user *)arg);
+#ifdef CONFIG_LL_ENCRYPTION
+		if (!rc)
+			sptlrpc_enc_pool_add_user();
+#endif
+		return rc;
 	case LL_IOC_REMOVE_ENCRYPTION_KEY:
 		if (!ll_sbi_has_encrypt(ll_i2sbi(inode)))
 			return -EOPNOTSUPP;
-		return llcrypt_ioctl_remove_key(file, (void __user *)arg);
+		rc = llcrypt_ioctl_remove_key(file, (void __user *)arg);
+#ifdef CONFIG_LL_ENCRYPTION
+		if (!rc)
+			sptlrpc_enc_pool_del_user();
+#endif
+		return rc;
 	case LL_IOC_REMOVE_ENCRYPTION_KEY_ALL_USERS:
 		if (!ll_sbi_has_encrypt(ll_i2sbi(inode)))
 			return -EOPNOTSUPP;
-		return llcrypt_ioctl_remove_key_all_users(file,
-							  (void __user *)arg);
+		rc = llcrypt_ioctl_remove_key_all_users(file,
+							(void __user *)arg);
+#ifdef CONFIG_LL_ENCRYPTION
+		if (!rc)
+			sptlrpc_enc_pool_del_user();
+#endif
+		return rc;
 	case LL_IOC_GET_ENCRYPTION_KEY_STATUS:
 		if (!ll_sbi_has_encrypt(ll_i2sbi(inode)))
 			return -EOPNOTSUPP;

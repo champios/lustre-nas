@@ -39,6 +39,7 @@
 #define DEBUG_SUBSYSTEM S_LDLM
 
 #include <cl_object.h>
+#include <linux/fs_struct.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -508,6 +509,7 @@ int client_obd_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 	cli->cl_mod_rpcs_in_flight = 0;
 	cli->cl_close_rpcs_in_flight = 0;
 	init_waitqueue_head(&cli->cl_mod_rpcs_waitq);
+	cli->cl_mod_rpcs_init = ktime_get_real();
 	cli->cl_mod_tag_bitmap = NULL;
 
 	INIT_LIST_HEAD(&cli->cl_chg_dev_linkage);
@@ -2716,6 +2718,7 @@ static int target_recovery_thread(void *arg)
 	int rc = 0;
 
 	ENTRY;
+	unshare_fs_struct();
 	OBD_ALLOC_PTR(thread);
 	if (thread == NULL)
 		RETURN(-ENOMEM);

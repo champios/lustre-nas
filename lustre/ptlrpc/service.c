@@ -31,6 +31,7 @@
 
 #define DEBUG_SUBSYSTEM S_RPC
 
+#include <linux/fs_struct.h>
 #include <linux/kthread.h>
 #include <linux/ratelimit.h>
 
@@ -1445,6 +1446,7 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 		GOTO(out_free, rc = -ENOMEM);
 
 	*reqcopy = *req;
+	spin_lock_init(&reqcopy->rq_early_free_lock);
 	reqcopy->rq_reply_state = NULL;
 	reqcopy->rq_rep_swab_mask = 0;
 	reqcopy->rq_pack_bulk = 0;
@@ -2751,6 +2753,7 @@ static int ptlrpc_main(void *arg)
 	int counter = 0, rc = 0;
 
 	ENTRY;
+	unshare_fs_struct();
 
 	thread->t_task = current;
 	thread->t_pid = current->pid;
@@ -2957,6 +2960,7 @@ static int ptlrpc_hr_main(void *arg)
 	struct lu_env *env;
 	int rc;
 
+	unshare_fs_struct();
 	OBD_ALLOC_PTR(env);
 	if (env == NULL)
 		RETURN(-ENOMEM);

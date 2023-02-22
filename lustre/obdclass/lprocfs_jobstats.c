@@ -199,7 +199,7 @@ static int job_cleanup_iter_callback(struct cfs_hash *hs,
 static void lprocfs_job_cleanup(struct obd_job_stats *stats, bool clear)
 {
 	ktime_t cleanup_interval = stats->ojs_cleanup_interval;
-	ktime_t now = ktime_get();
+	ktime_t now = ktime_get_real();
 	ktime_t oldest;
 
 	if (likely(!clear)) {
@@ -242,7 +242,7 @@ static void lprocfs_job_cleanup(struct obd_job_stats *stats, bool clear)
 
 	write_lock(&stats->ojs_lock);
 	stats->ojs_cleaning = false;
-	stats->ojs_cleanup_last = ktime_get();
+	stats->ojs_cleanup_last = ktime_get_real();
 	write_unlock(&stats->ojs_lock);
 }
 
@@ -263,8 +263,7 @@ static struct job_stat *job_alloc(char *jobid, struct obd_job_stats *jobs)
 	jobs->ojs_cntr_init_fn(job->js_stats, 0);
 
 	memcpy(job->js_jobid, jobid, sizeof(job->js_jobid));
-	job->js_time_init = ktime_get();
-	job->js_time_latest = job->js_time_init;
+	job->js_time_latest = job->js_stats->ls_init;
 	job->js_jobstats = jobs;
 	INIT_HLIST_NODE(&job->js_hash);
 	INIT_LIST_HEAD(&job->js_list);
@@ -324,7 +323,7 @@ int lprocfs_job_stats_log(struct obd_device *obd, char *jobid,
 
 found:
 	LASSERT(stats == job->js_jobstats);
-	job->js_time_latest = ktime_get();
+	job->js_time_latest = ktime_get_real();
 	lprocfs_counter_add(job->js_stats, event, amount);
 
 	job_putref(job);
@@ -439,26 +438,37 @@ static int lprocfs_jobstats_seq_show(struct seq_file *p, void *v)
 	struct lprocfs_stats *s;
 	struct lprocfs_counter ret;
 	struct lprocfs_counter_header *cntr_header;
-	int i;
+	char escaped[LUSTRE_JOBID_SIZE * 4] = "";
+	char *quote = "", *c, *end;
+	int i, joblen = 0;
 
 	if (v == SEQ_START_TOKEN) {
 		seq_printf(p, "job_stats:\n");
 		return 0;
 	}
 
-	/* Replace the non-printable character in jobid with '?', so
-	 * that the output of jobid will be confined in single line. */
-	seq_printf(p, "- %-16s ", "job_id:");
-	for (i = 0; i < strlen(job->js_jobid); i++) {
-		if (isprint(job->js_jobid[i]) != 0)
-			seq_putc(p, job->js_jobid[i]);
-		else
-			seq_putc(p, '?');
+	/* Quote and escape jobid characters to escape hex codes "\xHH" if
+	 * it contains any non-standard characters (space, newline, etc),
+	 * so it will be confined to single line and not break parsing.
+	 */
+	for (c = job->js_jobid, end = job->js_jobid + sizeof(job->js_jobid);
+	     c < end && *c != '\0';
+	     c++, joblen++) {
+		if (!isalnum(*c) &&
+		    *c != '.' && *c != '@' && *c != '-' && *c != '_') {
+			quote = "\"";
+			snprintf(escaped + joblen, sizeof(escaped), "\\x%02X",
+				 (unsigned char)*c);
+			joblen += 3;
+		} else {
+			escaped[joblen] = *c;
+		}
 	}
-	seq_putc(p, '\n');
 
-	lprocfs_stats_header(p, job->js_time_latest, job->js_time_init, 16,
-			     ":", true);
+	seq_printf(p, "- %-16s %s%*s%s\n",
+		   "job_id:", quote, joblen, escaped, quote);
+	lprocfs_stats_header(p, job->js_time_latest, job->js_stats->ls_init,
+			     16, ":", true, "  ");
 
 	s = job->js_stats;
 	for (i = 0; i < s->ls_num; i++) {
@@ -486,6 +496,7 @@ static int lprocfs_jobstats_seq_show(struct seq_file *p, void *v)
 		seq_printf(p, " }\n");
 
 	}
+
 	return 0;
 }
 
@@ -627,7 +638,7 @@ int lprocfs_job_stats_init(struct obd_device *obd, int cntr_num,
 	 * it is easier to work with.
 	 */
 	stats->ojs_cleanup_interval = ktime_set(600 / 2, 0); /* default 10 min*/
-	stats->ojs_cleanup_last = ktime_get();
+	stats->ojs_cleanup_last = ktime_get_real();
 
 	entry = lprocfs_add_simple(obd->obd_proc_entry, "job_stats", stats,
 				   &lprocfs_jobstats_seq_fops);

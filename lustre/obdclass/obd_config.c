@@ -1024,21 +1024,29 @@ static int class_del_conn(struct obd_device *obd, struct lustre_cfg *lcfg)
 static LIST_HEAD(lustre_profile_list);
 static DEFINE_SPINLOCK(lustre_profile_list_lock);
 
+static struct lustre_profile *class_get_profile_nolock(const char *prof)
+{
+	struct lustre_profile *lprof;
+
+	ENTRY;
+	list_for_each_entry(lprof, &lustre_profile_list, lp_list) {
+		if (strcmp(lprof->lp_profile, prof) == 0) {
+			lprof->lp_refs++;
+			RETURN(lprof);
+		}
+	}
+	RETURN(NULL);
+}
+
 struct lustre_profile *class_get_profile(const char *prof)
 {
 	struct lustre_profile *lprof;
 
 	ENTRY;
 	spin_lock(&lustre_profile_list_lock);
-	list_for_each_entry(lprof, &lustre_profile_list, lp_list) {
-		if (!strcmp(lprof->lp_profile, prof)) {
-			lprof->lp_refs++;
-			spin_unlock(&lustre_profile_list_lock);
-			RETURN(lprof);
-		}
-	}
+	lprof = class_get_profile_nolock(prof);
 	spin_unlock(&lustre_profile_list_lock);
-	RETURN(NULL);
+	RETURN(lprof);
 }
 EXPORT_SYMBOL(class_get_profile);
 
@@ -1109,9 +1117,9 @@ void class_del_profile(const char *prof)
 
 	CDEBUG(D_CONFIG, "Del profile %s\n", prof);
 
-	lprof = class_get_profile(prof);
+	spin_lock(&lustre_profile_list_lock);
+	lprof = class_get_profile_nolock(prof);
 	if (lprof) {
-		spin_lock(&lustre_profile_list_lock);
 		/* because get profile increments the ref counter */
 		lprof->lp_refs--;
 		list_del(&lprof->lp_list);
@@ -1119,6 +1127,8 @@ void class_del_profile(const char *prof)
 		spin_unlock(&lustre_profile_list_lock);
 
 		class_put_profile(lprof);
+	} else {
+		spin_unlock(&lustre_profile_list_lock);
 	}
 	EXIT;
 }
@@ -1261,6 +1271,7 @@ static ssize_t process_param2_config(struct lustre_cfg *lcfg)
 	char *upcall = lustre_cfg_string(lcfg, 2);
 	struct kobject *kobj = NULL;
 	const char *subsys = param;
+	char *newparam = NULL;
 	char *argv[] = {
 		[0] = "/usr/sbin/lctl",
 		[1] = "set_param",
@@ -1277,15 +1288,15 @@ static ssize_t process_param2_config(struct lustre_cfg *lcfg)
 
 	len = strcspn(param, ".=");
 	if (!len)
-		return -EINVAL;
+		RETURN(-EINVAL);
 
 	/* If we find '=' then its the top level sysfs directory */
 	if (param[len] == '=')
-		return class_set_global(param);
+		RETURN(class_set_global(param));
 
 	subsys = kstrndup(param, len, GFP_KERNEL);
 	if (!subsys)
-		return -ENOMEM;
+		RETURN(-ENOMEM);
 
 	kobj = kset_find_obj(lustre_kset, subsys);
 	kfree(subsys);
@@ -1316,6 +1327,22 @@ static ssize_t process_param2_config(struct lustre_cfg *lcfg)
 		RETURN(-EINVAL);
 	}
 
+	/* root_squash and nosquash_nids settings must be applied to
+	 * global subsystem (*.) so that it is taken into account by
+	 * both client and server sides. So do the equivalent of a
+	 * 's / mdt. / *. /'.
+	 */
+	if ((strstr(param, PARAM_NOSQUASHNIDS) ||
+	     strstr(param, PARAM_ROOTSQUASH)) &&
+	    (param[0] != '*' || param[1] != '.')) {
+		newparam = kmalloc(strlen(param) + 1, GFP_NOFS);
+		if (!newparam)
+			RETURN(-ENOMEM);
+
+		snprintf(newparam, strlen(param) + 1, "*%s", param + len);
+		argv[2] = (char *)newparam;
+	}
+
 	start = ktime_get();
 	rc = call_usermodehelper(argv[0], argv, NULL, UMH_WAIT_PROC);
 	end = ktime_get();
@@ -1331,6 +1358,7 @@ static ssize_t process_param2_config(struct lustre_cfg *lcfg)
 		       rc = 0;
 	}
 
+	kfree(newparam);
 	RETURN(rc);
 }
 
@@ -2050,6 +2078,29 @@ parse_out:
 EXPORT_SYMBOL(class_config_parse_llog);
 
 /**
+ * Get marker cfg_flag
+ */
+void llog_get_marker_cfg_flags(struct llog_rec_hdr *rec,
+			       unsigned int *cfg_flags)
+{
+	struct lustre_cfg *lcfg = (struct lustre_cfg *)(rec + 1);
+	struct cfg_marker *marker;
+
+	if (lcfg->lcfg_command == LCFG_MARKER) {
+		marker = lustre_cfg_buf(lcfg, 1);
+		if (marker->cm_flags & CM_START) {
+			*cfg_flags = CFG_F_MARKER;
+			if (marker->cm_flags & CM_SKIP)
+				*cfg_flags = CFG_F_SKIP;
+		} else if (marker->cm_flags & CM_END) {
+			*cfg_flags = 0;
+		}
+		CDEBUG(D_INFO, "index=%d, cm_flags=%#08x cfg_flags=%#08x\n",
+		       rec->lrh_index, marker->cm_flags, *cfg_flags);
+	}
+}
+
+/**
  * Parse config record and output dump in supplied buffer.
  *
  * This is separated from class_config_dump_handler() to use
@@ -2084,28 +2135,14 @@ int class_config_yaml_output(struct llog_rec_hdr *rec, char *buf, int size,
 	if (!ldata)
 		return -ENOTTY;
 
-	if (lcfg->lcfg_command == LCFG_MARKER) {
-		struct cfg_marker *marker = lustre_cfg_buf(lcfg, 1);
-
-		lustre_swab_cfg_marker(marker, swab,
-				       LUSTRE_CFG_BUFLEN(lcfg, 1));
-		if (marker->cm_flags & CM_START) {
-			*cfg_flags = CFG_F_MARKER;
-			if (marker->cm_flags & CM_SKIP)
-				*cfg_flags = CFG_F_SKIP;
-		} else if (marker->cm_flags & CM_END) {
-			*cfg_flags = 0;
-		}
-		if (likely(!raw))
-			return 0;
-	}
-
+	llog_get_marker_cfg_flags(rec, cfg_flags);
+	if ((lcfg->lcfg_command == LCFG_MARKER) && likely(!raw))
+		return 0;
 	/* entries outside marker are skipped */
 	if (!(*cfg_flags & CFG_F_MARKER) && !raw)
 		return 0;
-
 	/* inside skipped marker */
-	if (*cfg_flags & CFG_F_SKIP && !raw)
+	if ((*cfg_flags & CFG_F_SKIP) && !raw)
 		return 0;
 
 	/* form YAML entity */
@@ -2168,15 +2205,9 @@ int class_config_yaml_output(struct llog_rec_hdr *rec, char *buf, int size,
 	}
 
 	if (lcfg->lcfg_command == LCFG_MARKER) {
-		struct cfg_marker *marker = lustre_cfg_buf(lcfg, 1);
+		struct cfg_marker *marker;
 
-		if (marker->cm_flags & CM_START) {
-			*cfg_flags = CFG_F_MARKER;
-			if (marker->cm_flags & CM_SKIP)
-				*cfg_flags = CFG_F_SKIP;
-		} else if (marker->cm_flags & CM_END) {
-			*cfg_flags = 0;
-		}
+		marker = lustre_cfg_buf(lcfg, 1);
 		ptr += snprintf(ptr, end - ptr, ", flags: %#04x",
 				marker->cm_flags);
 		ptr += snprintf(ptr, end - ptr, ", version: %d.%d.%d.%d",

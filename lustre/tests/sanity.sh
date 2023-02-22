@@ -1171,6 +1171,7 @@ test_24s() {
 	$CHECKSTAT -t dir $DIR/R15a/b/c || error "$DIR/R15a/b/c missing"
 }
 run_test 24s "mkdir .../R15a/b/c; rename .../R15a .../R15a/b/c ="
+
 test_24t() {
 	test_mkdir $DIR/R16a
 	test_mkdir $DIR/R16a/b
@@ -5257,6 +5258,10 @@ run_test 42c "test partial truncate of file with cached dirty data"
 test_42d() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 
+	local olddebug="$($LCTL get_param -n debug 2> /dev/null)"
+	stack_trap "$LCTL set_param -n debug='$olddebug'" EXIT
+	$LCTL set_param debug=+cache
+
 	trunc_test 42d 0
 	[ $BEFOREWRITES -eq $AFTERWRITES ] ||
 		error "beforewrites $BEFOREWRITES != afterwrites $AFTERWRITES on truncate"
@@ -8834,6 +8839,10 @@ test_64e() {
 	[ $OST1_VERSION -ge $(version_code 2.11.56) ] ||
 		skip "Need OSS version at least 2.11.56"
 
+	local olddebug="$($LCTL get_param -n debug 2> /dev/null)"
+	stack_trap "$LCTL set_param -n debug='$olddebug'" EXIT
+	$LCTL set_param debug=+cache
+
 	# Remount client to reset grant
 	remount_client $MOUNT || error "failed to remount client"
 	local osc_tgt="$FSNAME-OST0000-osc-$($LFS getname -i $DIR)"
@@ -8886,6 +8895,10 @@ run_test 64e "check grant consumption (no grant allocation)"
 
 test_64f() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+
+	local olddebug="$($LCTL get_param -n debug 2> /dev/null)"
+	stack_trap "$LCTL set_param -n debug='$olddebug'" EXIT
+	$LCTL set_param debug=+cache
 
 	# Remount client to reset grant
 	remount_client $MOUNT || error "failed to remount client"
@@ -13354,20 +13367,44 @@ run_test 126 "check that the fsgid provided by the client is taken into account"
 test_127a() { # bug 15521
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	local name count samp unit min max sum sumsq
+	local tmpfile=$TMP/$tfile.tmp
 
 	$LFS setstripe -i 0 -c 1 $DIR/$tfile || error "setstripe failed"
 	echo "stats before reset"
-	$LCTL get_param osc.*.stats
+	stack_trap "rm -f $tmpfile"
+	local now=$(date +%s)
+
+	$LCTL get_param osc.*.stats | tee $tmpfile
+
+	local snapshot_time=$(awk '/snapshot_time/ { print $2; exit }' $tmpfile)
+	local start_time=$(awk '/start_time/ { print $2; exit }' $tmpfile)
+	local elapsed=$(awk '/elapsed_time/ { print $2; exit }' $tmpfile)
+	local uptime=$(awk '{ print $1 }' /proc/uptime)
+
+	# snapshot_time should match POSIX epoch time, allow some delta for VMs
+	(( ${snapshot_time%\.*} >= $now - 5 &&
+	   ${snapshot_time%\.*} <= $now + 5 )) ||
+		error "snapshot_time=$snapshot_time != now=$now"
+	# elapsed _should_ be from mount, but at least less than uptime
+	(( ${elapsed%\.*} < ${uptime%\.*} )) ||
+		error "elapsed=$elapsed > uptime=$uptime"
+	(( ${snapshot_time%\.*} - ${start_time%\.*} >= ${elapsed%\.*} - 2 &&
+	   ${snapshot_time%\.*} - ${start_time%\.*} <= ${elapsed%\.*} + 2 )) ||
+		error "elapsed=$elapsed != $snapshot_time - $start_time"
+
 	$LCTL set_param osc.*.stats=0
+	local reset=$(date +%s)
 	local fsize=$((2048 * 1024))
 
 	dd if=/dev/zero of=$DIR/$tfile bs=$fsize count=1
 	cancel_lru_locks osc
 	dd if=$DIR/$tfile of=/dev/null bs=$fsize
 
-	$LCTL get_param osc.*0000-osc-*.stats | grep samples > $DIR/$tfile.tmp
-	stack_trap "rm -f $TMP/$tfile.tmp"
+	now=$(date +%s)
+	$LCTL get_param osc.*0000-osc-*.stats > $tmpfile
 	while read name count samp unit min max sum sumsq; do
+		[[ "$samp" == "samples" ]] || continue
+
 		echo "got name=$name count=$count unit=$unit min=$min max=$max"
 		[ ! $min ] && error "Missing min value for $name proc entry"
 		eval $name=$count || error "Wrong proc format"
@@ -13392,13 +13429,29 @@ test_127a() { # bug 15521
 			;;
 		*)	;;
 		esac
-	done < $DIR/$tfile.tmp
+	done < $tmpfile
 
 	#check that we actually got some stats
 	[ "$read_bytes" ] || error "Missing read_bytes stats"
 	[ "$write_bytes" ] || error "Missing write_bytes stats"
 	[ "$read_bytes" != 0 ] || error "no read done"
 	[ "$write_bytes" != 0 ] || error "no write done"
+
+	snapshot_time=$(awk '/snapshot_time/ { print $2; exit }' $tmpfile)
+	start_time=$(awk '/start_time/ { print $2; exit }' $tmpfile)
+	elapsed=$(awk '/elapsed_time/ { print $2; exit }' $tmpfile)
+
+	# snapshot_time should match POSIX epoch time, allow some delta for VMs
+	(( ${snapshot_time%\.*} >= $now - 5 &&
+	   ${snapshot_time%\.*} <= $now + 5 )) ||
+		error "reset snapshot_time=$snapshot_time != now=$now"
+	# elapsed should be from time of stats reset
+	(( ${elapsed%\.*} >= $now - $reset - 2 &&
+	   ${elapsed%\.*} <= $now - $reset + 2 )) ||
+		error "reset elapsed=$elapsed > $now - $reset"
+	(( ${snapshot_time%\.*} - ${start_time%\.*} >= ${elapsed%\.*} - 2 &&
+	   ${snapshot_time%\.*} - ${start_time%\.*} <= ${elapsed%\.*} + 2 )) ||
+		error "reset elapsed=$elapsed != $snapshot_time - $start_time"
 }
 run_test 127a "verify the client stats are sane"
 
@@ -18606,18 +18659,32 @@ test_205b() {
 	(( $MDS1_VERSION >= $(version_code 2.13.54.91) )) ||
 		skip "Need MDS version at least 2.13.54.91"
 
-	job_stats="mdt.*.job_stats"
-	$LCTL set_param $job_stats=clear
+	local job_stats="mdt.*.job_stats"
+	local old_jobid=$(do_facet mds1 $LCTL get_param jobid_var)
+
+	do_facet mds1 $LCTL set_param $job_stats=clear
+
 	# Setting jobid_var to USER might not be supported
+	[[ -n "$old_jobid" ]] && stack_trap "$LCTL set_param $old_jobid"
 	$LCTL set_param jobid_var=USER || true
-	$LCTL set_param jobid_name="%e.%u"
+	stack_trap "$LCTL set_param $($LCTL get_param jobid_name)"
+	$LCTL set_param jobid_name="%j.%e.%u"
+
 	env -i USERTESTJOBSTATS=foolish touch $DIR/$tfile.1
-	do_facet $SINGLEMDS $LCTL get_param $job_stats |
-		grep "job_id:.*foolish" &&
-			error "Unexpected jobid found"
-	do_facet $SINGLEMDS $LCTL get_param $job_stats |
-		grep "open:.*min.*max.*sum" ||
-			error "wrong job_stats format found"
+	do_facet mds1 $LCTL get_param $job_stats | grep "job_id:.*foolish" &&
+		{ do_facet mds1 $LCTL get_param $job_stats;
+		  error "Unexpected jobid found"; }
+	do_facet mds1 $LCTL get_param $job_stats | grep "open:.*min.*max.*sum"||
+		{ do_facet mds1 $LCTL get_param $job_stats;
+		  error "wrong job_stats format found"; }
+
+	(( $MDS1_VERSION <= $(version_code 2.15.0) )) &&
+		echo "MDS does not yet escape jobid" && return 0
+	$LCTL set_param jobid_var=TEST205b
+	env -i TEST205b="has sp" touch $DIR/$tfile.2
+	do_facet mds1 $LCTL get_param $job_stats | grep "has.*x20sp" ||
+		{ do_facet mds1 $LCTL get_param $job_stats;
+		  error "jobid not escaped"; }
 }
 run_test 205b "Verify job stats jobid and output format"
 
@@ -28244,6 +28311,42 @@ test_904() {
 		error "projid expected 1002 not $projid"
 }
 run_test 904 "virtual project ID xattr"
+
+test_907() {
+	local file=$DIR/$tdir/$tfile
+
+	(( $MDS1_VERSION >= $(version_code 2.15.1) )) ||
+		skip "need lustre >= 2.15.51"
+	(( $OST1_VERSION >= $(version_code 2.15.1) )) ||
+		skip "need lustre >= 2.15.51"
+	verify_yaml_available || skip_env "YAML verification not installed"
+
+	test_mkdir $DIR/$tdir
+	$LFS setstripe -E 1M -L mdt -E -1 $file || error "setstripe failed"
+
+	dd if=/dev/zero of=$file bs=1M count=10 conv=sync ||
+		error "failed to write data to $file"
+	mv $file $file.2
+
+	echo -n 'verify rename_stats...'
+	output=$(do_facet mds1 \
+		 "$LCTL get_param -n mdt.$FSNAME-MDT0000.rename_stats")
+	verify_yaml "$output" || error "rename_stats is not valid YAML"
+	echo " OK"
+
+	echo -n 'verify mdt job_stats...'
+	output=$(do_facet mds1 \
+		 "$LCTL get_param -n mdt.$FSNAME-MDT0000.job_stats")
+	verify_yaml "$output" || error "job_stats on mds1 is not valid YAML"
+	echo " OK"
+
+	echo -n 'verify ost job_stats...'
+	output=$(do_facet ost1 \
+		 "$LCTL get_param -n obdfilter.$FSNAME-OST0000.job_stats")
+	verify_yaml "$output" || error "job_stats on ost1 is not valid YAML"
+	echo " OK"
+}
+run_test 907 "verify the format of some stats files"
 
 complete $SECONDS
 [ -f $EXT2_DEV ] && rm $EXT2_DEV || true
