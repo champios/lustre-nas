@@ -170,12 +170,17 @@ AS_IF([test "x$enable_modules" = xyes], [
 			LC_PROG_LINUX
 
 			# Run any parallel compile tests
+			LB_PROG_LINUX_SRC
 			LIBCFS_PROG_LINUX_SRC
 			LN_PROG_LINUX_SRC
 			AS_IF([test "x$enable_server" != xno], [LB_EXT4_SRC_DIR_SRC])
 			LC_PROG_LINUX_SRC
 
+			LB2_LINUX_TEST_COMPILE_ALL([lustre],
+				[for available lustre kapi interfaces])
+
 			# Collect parallel compile tests results
+			LB_PROG_LINUX_RESULTS
 			LIBCFS_PROG_LINUX_RESULTS
 			LN_PROG_LINUX_RESULTS
 			AS_IF([test "x$enable_server" != xno], [LB_EXT4_SRC_DIR_RESULTS])
@@ -447,6 +452,7 @@ AM_CONDITIONAL([RHEL], [test -f /etc/redhat-release])
 AM_CONDITIONAL([SUSE], [test -f /etc/SUSE-brand -o -f /etc/SuSE-release])
 AM_CONDITIONAL([UBUNTU], [test x$UBUNTU_KERNEL = xyes])
 AM_CONDITIONAL([BUILD_LUTF], [test x$enable_lutf = xyes])
+AM_CONDITIONAL([DEQUOTE_CC_VERSION_TEXT], [test x$lb_cv_dequote_CC_VERSION_TEXT = xyes])
 
 LN_CONDITIONALS
 LC_CONDITIONALS

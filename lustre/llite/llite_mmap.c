@@ -250,6 +250,25 @@ static inline int to_fault_error(int result)
 	return result;
 }
 
+int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct inode *inode = file_inode(vma->vm_file);
+	int ret;
+	unsigned int seq;
+
+	/* this seqlock lets us notice if a page has been deleted on this inode
+	 * during the fault process, allowing us to catch an erroneous SIGBUS
+	 * See LU-16160
+	 */
+	do {
+		seq = read_seqbegin(&ll_i2info(inode)->lli_page_inv_lock);
+		ret = __ll_filemap_fault(vma, vmf);
+	} while (read_seqretry(&ll_i2info(inode)->lli_page_inv_lock, seq) &&
+		 (ret & VM_FAULT_SIGBUS));
+
+	return ret;
+}
+
 /**
  * Lustre implementation of a vm_operations_struct::fault() method, called by
  * VM to server page fault (both in kernel and user space).
@@ -392,15 +411,22 @@ restart:
 	    !(result & (VM_FAULT_RETRY | VM_FAULT_ERROR | VM_FAULT_LOCKED))) {
 		struct page *vmpage = vmf->page;
 
-		/* check if this page has been truncated */
+		/* lock the page, then check if this page has been truncated
+		 * or deleted from Lustre and retry if so
+		 */
 		lock_page(vmpage);
-		if (unlikely(vmpage->mapping == NULL)) { /* unlucky */
+		if (unlikely(vmpage->mapping == NULL) ||
+		    vmpage->private == 0) { /* unlucky */
 			unlock_page(vmpage);
 			put_page(vmpage);
 			vmf->page = NULL;
 
 			if (!printed && ++count > 16) {
-				CWARN("the page is under heavy contention, maybe your app(%s) needs revising :-)\n",
+				struct inode *inode = file_inode(vma->vm_file);
+
+				CWARN("%s: FID "DFID" under heavy mmap contention by '%s', consider revising IO pattern\n",
+				      ll_i2sbi(inode)->ll_fsname,
+				      PFID(&ll_i2info(inode)->lli_fid),
 				      current->comm);
 				printed = true;
 			}

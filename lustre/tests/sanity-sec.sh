@@ -2310,6 +2310,10 @@ test_31() {
 	local nid=$(lctl list_nids | grep ${NETTYPE} | head -n1)
 	local addr=${nid%@*}
 	local net=${nid#*@}
+	local net2=${NETTYPE}999
+	local mdsnid=$(do_facet mds1 $LCTL list_nids | head -1)
+	local addr1=${mdsnid%@*}
+	local addr2=${addr1%.*}.$(((${addr1##*.} + 11) % 256))
 
 	export LNETCTL=$(which lnetctl 2> /dev/null)
 
@@ -2334,39 +2338,44 @@ test_31() {
 		  2>/dev/null | grep -q -" &&
 		error "export on servers should be empty"
 
-	# add network ${NETTYPE}999 on all nodes
+	# add network $net2 on all nodes
 	do_nodes $(comma_list $(all_nodes)) \
 		 "$LNETCTL lnet configure && $LNETCTL net add --if \
 		  \$($LNETCTL net show --net $net | awk 'BEGIN{inf=0} \
 		  {if (inf==1) print \$2; fi; inf=0} /interfaces/{inf=1}') \
-		  --net ${NETTYPE}999" ||
-		error "unable to configure NID ${NETTYPE}999"
+		  --net $net2" ||
+		error "unable to configure NID $net2"
 
 	# necessary to do writeconf in order to register
-	# new @${NETTYPE}999 nid for targets
+	# new @$net2 nid for targets
 	KZPOOL=$KEEP_ZPOOL
 	export KEEP_ZPOOL="true"
 	stopall
 	export SK_MOUNTED=false
 	writeconf_all
+
+	nids="${addr1}@$net,${addr1}@$net2:${addr2}@$net,${addr2}@$net2"
+	do_facet mds1 "$TUNEFS --servicenode="$nids" $(mdsdevname 1)" ||
+		error "tunefs failed"
+
 	setupall server_only || echo 1
 	export KEEP_ZPOOL="$KZPOOL"
 
 	# backup MGSNID
 	local mgsnid_orig=$MGSNID
 	# compute new MGSNID
-	MGSNID=$(do_facet mgs "$LCTL list_nids | grep ${NETTYPE}999")
+	MGSNID=$(do_facet mgs "$LCTL list_nids | grep $net2")
 
 	# on client, turn LNet Dynamic Discovery on
 	lnetctl set discovery 1
 
-	# mount client with -o network=${NETTYPE}999 option:
+	# mount client with -o network=$net2 option:
 	# should fail because of LNet Dynamic Discovery
-	mount_client $MOUNT ${MOUNT_OPTS},network=${NETTYPE}999 &&
+	mount_client $MOUNT ${MOUNT_OPTS},network=$net2 &&
 		error "client mount with '-o network' option should be refused"
 
 	# on client, reconfigure LNet and turn LNet Dynamic Discovery off
-	$LNETCTL net del --net ${NETTYPE}999 && lnetctl lnet unconfigure
+	$LNETCTL net del --net $net2 && lnetctl lnet unconfigure
 	lustre_rmmod
 	modprobe lnet
 	lnetctl set discovery 0
@@ -2374,11 +2383,11 @@ test_31() {
 	$LNETCTL lnet configure && $LNETCTL net add --if \
 	  $($LNETCTL net show --net $net | awk 'BEGIN{inf=0} \
 	  {if (inf==1) print $2; fi; inf=0} /interfaces/{inf=1}') \
-	  --net ${NETTYPE}999 ||
-	error "unable to configure NID ${NETTYPE}999 on client"
+	  --net $net2 ||
+		error "unable to configure NID $net2 on client"
 
-	# mount client with -o network=${NETTYPE}999 option
-	mount_client $MOUNT ${MOUNT_OPTS},network=${NETTYPE}999 ||
+	# mount client with -o network=$net2 option
+	mount_client $MOUNT ${MOUNT_OPTS},network=$net2 ||
 		error "unable to remount client"
 
 	# restore MGSNID
@@ -2386,24 +2395,34 @@ test_31() {
 
 	# check export on MGS
 	do_facet mgs "lctl get_param -n *.MGS*.exports.'$nid'.uuid 2>/dev/null |
-		      grep -q -"
+		      grep -"
 	[ $? -ne 0 ] ||	error "export for $nid on MGS should not exist"
 
 	do_facet mgs \
-		"lctl get_param -n *.MGS*.exports.'${addr}@${NETTYPE}999'.uuid \
-		 2>/dev/null | grep -q -"
+		"lctl get_param -n *.MGS*.exports.'${addr}@$net2'.uuid \
+		 2>/dev/null | grep -"
 	[ $? -eq 0 ] ||
-		error "export for ${addr}@${NETTYPE}999 on MGS should exist"
+		error "export for ${addr}@$net2 on MGS should exist"
 
 	# check {mdc,osc} imports
 	lctl get_param mdc.${FSNAME}-*.import | grep current_connection |
-	    grep -q ${NETTYPE}999
+	    grep $net2
 	[ $? -eq 0 ] ||
-		error "import for mdc should use ${addr}@${NETTYPE}999"
+		error "import for mdc should use ${addr1}@$net2"
 	lctl get_param osc.${FSNAME}-*.import | grep current_connection |
-	    grep -q ${NETTYPE}999
+	    grep $net2
 	[ $? -eq 0 ] ||
-		error "import for osc should use ${addr}@${NETTYPE}999"
+		error "import for osc should use ${addr1}@$net2"
+
+	# no NIDs on other networks should be listed
+	lctl get_param mdc.${FSNAME}-*.import | grep failover_nids |
+	    grep -w ".*@$net" &&
+		error "MDC import shouldn't have failnids at @$net"
+
+	# failover NIDs on net999 should be listed
+	lctl get_param mdc.${FSNAME}-*.import | grep failover_nids |
+	    grep ${addr2}@$net2 ||
+		error "MDC import should have failnid ${addr2}@$net2"
 }
 run_test 31 "client mount option '-o network'"
 
@@ -2730,6 +2749,18 @@ remove_enc_key() {
 	fi
 }
 
+wait_ssk() {
+	# wait for SSK flavor to be applied if necessary
+	if $GSS_SK; then
+		if $SK_S2S; then
+			wait_flavor all2all $SK_FLAVOR
+		else
+			wait_flavor cli2mdt $SK_FLAVOR
+			wait_flavor cli2ost $SK_FLAVOR
+		fi
+	fi
+}
+
 remount_client_normally() {
 	# remount client without dummy encryption key
 	if is_mounted $MOUNT; then
@@ -2747,6 +2778,7 @@ remount_client_normally() {
 	fi
 
 	remove_enc_key
+	wait_ssk
 }
 
 remount_client_dummykey() {
@@ -2758,6 +2790,8 @@ remount_client_dummykey() {
 	fi
 	mount_client $MOUNT ${MOUNT_OPTS},test_dummy_encryption ||
 		error "remount failed"
+
+	wait_ssk
 }
 
 setup_for_enc_tests() {
@@ -2767,6 +2801,8 @@ setup_for_enc_tests() {
 	fi
 	mount_client $MOUNT ${MOUNT_OPTS},test_dummy_encryption ||
 		error "mount with '-o test_dummy_encryption' failed"
+
+	wait_ssk
 
 	# this directory will be encrypted, because of dummy mode
 	mkdir $DIR/$tdir
@@ -2827,7 +2863,6 @@ test_37() {
 	local testfile=$DIR/$tdir/$tfile
 	local tmpfile=$TMP/abc
 	local objdump=$TMP/objdump
-	local objid
 
 	$LCTL get_param mdc.*.import | grep -q client_encryption ||
 		skip "client encryption not supported"
@@ -2847,8 +2882,17 @@ test_37() {
 	do_facet ost1 "sync; sync"
 
 	# check that content on ost is encrypted
-	objid=$($LFS getstripe $testfile | awk '/obdidx/{getline; print $2}')
-	do_facet ost1 "$DEBUGFS -c -R 'cat O/0/d$(($objid % 32))/$objid' \
+	local fid=($($LFS getstripe $testfile | grep 0x))
+	local seq=${fid[3]#0x}
+	local oid=${fid[1]}
+	local oid_hex
+
+	if [ $seq == 0 ]; then
+		oid_hex=${fid[1]}
+	else
+		oid_hex=${fid[2]#0x}
+	fi
+	do_facet ost1 "$DEBUGFS -c -R 'cat O/$seq/d$(($oid % 32))/$oid_hex' \
 		 $(ostdevname 1)" > $objdump
 	cmp -s $objdump $tmpfile &&
 		error "file $testfile is not encrypted on ost"
@@ -3902,7 +3946,7 @@ test_50() {
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted in memory"
 
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 
 	# check that file read from server is correct
 	cmp -bl $tmpfile $testfile ||
@@ -3911,7 +3955,7 @@ test_50() {
 	# decrease size: truncate to PAGE_SIZE
 	$TRUNCATE $tmpfile $pagesz
 	$TRUNCATE $testfile $pagesz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (1)"
 
@@ -3919,7 +3963,7 @@ test_50() {
 	sz=$((pagesz*2))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (2)"
 
@@ -3927,7 +3971,7 @@ test_50() {
 	sz=$((pagesz/2))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (3)"
 
@@ -3935,7 +3979,7 @@ test_50() {
 	sz=$((sz-7))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (4)"
 
@@ -3943,7 +3987,7 @@ test_50() {
 	sz=$((sz+18))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (5)"
 
@@ -3951,12 +3995,12 @@ test_50() {
 	sz=$((sz+pagesz+30))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (6)"
 
 	rm -f $testfile
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 
 	# write hole in file, data spread on MDT and OST
 	tr '\0' '2' < /dev/zero |
@@ -3968,7 +4012,7 @@ test_50() {
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted in memory"
 
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 
 	# check that file read from server is correct
 	cmp -bl $tmpfile $testfile ||
@@ -3979,7 +4023,7 @@ test_50() {
 	sz=$((1024*1024+13))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (7)"
 
@@ -3988,7 +4032,7 @@ test_50() {
 	sz=7
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (8)"
 
@@ -3997,7 +4041,7 @@ test_50() {
 	sz=$((1024*1024-13))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (9)"
 
@@ -4006,7 +4050,7 @@ test_50() {
 	sz=$((1024*1024+7))
 	$TRUNCATE $tmpfile $sz
 	$TRUNCATE $testfile $sz
-	cancel_lru_locks osc ; cancel_lru_locks mdc
+	remove_enc_key ; insert_enc_key
 	cmp -bl $tmpfile $testfile ||
 		error "file $testfile is corrupted (10)"
 
@@ -4285,6 +4329,7 @@ test_54() {
 	local testdir2=$DIR2/$tdir/$ID0
 	local testfile=$testdir/$tfile
 	local testfile2=$testdir/${tfile}withveryverylongnametoexercisecode
+	local testfile3=$testdir/_${tfile}
 	local tmpfile=$TMP/${tfile}.tmp
 	local resfile=$TMP/${tfile}.res
 	local nameenc=""
@@ -4329,6 +4374,8 @@ test_54() {
 	cp $testfile $tmpfile
 	$RUNAS dd if=/dev/urandom of=$testfile2 bs=127 count=1 conv=fsync ||
 		error "write to encrypted file $testfile2 failed"
+	$RUNAS dd if=/dev/urandom of=$testfile3 bs=127 count=1 conv=fsync ||
+		error "write to encrypted file $testfile3 failed"
 	$RUNAS mkdir $testdir/subdir || error "mkdir subdir failed"
 	$RUNAS touch $testdir/subdir/subfile || error "mkdir subdir failed"
 
@@ -4337,7 +4384,7 @@ test_54() {
 
 	$RUNAS ls -R $testdir || error "ls -R $testdir failed"
 	local filecount=$($RUNAS find $testdir -type f | wc -l)
-	[ $filecount -eq 3 ] || error "found $filecount files"
+	[ $filecount -eq 4 ] || error "found $filecount files"
 
 	# check enable_filename_encryption default value
 	# tunable only available for client built against embedded llcrypt
@@ -4350,12 +4397,16 @@ test_54() {
 		[ $nameenc -eq 0 ] ||
 		       error "enable_filename_encryption should be 0 by default"
 
-		# $testfile and $testfile2 should exist because
+		# $testfile, $testfile2 and $testfile3 should exist because
 		# names are not encrypted
 		[ -f $testfile ] ||
 		      error "$testfile should exist because name not encrypted"
 		[ -f $testfile2 ] ||
 		      error "$testfile2 should exist because name not encrypted"
+		[ -f $testfile3 ] ||
+		      error "$testfile3 should exist because name not encrypted"
+		stat $testfile3
+		[ $? -eq 0 ] || error "cannot stat $testfile3 without key"
 	fi
 
 	scrambledfiles=( $(find $testdir/ -maxdepth 1 -type f) )
@@ -4372,6 +4423,8 @@ test_54() {
 		error "reading $testfile failed"
 
 	cmp -bl $tmpfile $resfile || error "file read differs from file written"
+	stat $testfile3
+	[ $? -eq 0 ] || error "cannot stat $testfile3 with key"
 
 	$RUNAS fscrypt lock --verbose $testdir ||
 		error "fscrypt lock $testdir failed (2)"
@@ -4420,6 +4473,7 @@ test_54() {
 	export FILESET=/$tdir
 	mount_client $MOUNT ${MOUNT_OPTS} || error "remount failed (1)"
 	export FILESET=""
+	wait_ssk
 
 	# setup encryption from inside this subdir mount
 	# the .fscrypt directory is going to be created at the real fs root
@@ -4470,6 +4524,7 @@ test_54() {
 	export FILESET=/$tdir/vault
 	mount_client $MOUNT ${MOUNT_OPTS} || error "remount failed (2)"
 	export FILESET=""
+	wait_ssk
 	ls -laR $MOUNT
 	fid2=$(path2fid $MOUNT/.fscrypt)
 	echo "With FILESET $tdir/vault, .fscrypt FID is $fid2"
@@ -4486,6 +4541,7 @@ test_54() {
 	# remount client without subdir mount
 	umount_client $MOUNT || error "umount $MOUNT failed (3)"
 	mount_client $MOUNT ${MOUNT_OPTS} || error "remount failed (3)"
+	wait_ssk
 	ls -laR $MOUNT
 	fid2=$(path2fid $MOUNT/.fscrypt)
 	echo "Without FILESET, .fscrypt FID is $fid2"
@@ -4547,6 +4603,7 @@ cleanup_55() {
 	if [ "$MOUNT_2" ]; then
 		mount_client $MOUNT2 ${MOUNT_OPTS} || error "remount failed"
 	fi
+	wait_ssk
 }
 
 test_55() {
@@ -4610,6 +4667,7 @@ test_55() {
 	zconf_mount_clients $HOSTNAME $MOUNT $MOUNT_OPTS ||
 		error "remount failed"
 	unset FILESET
+	wait_ssk
 
 	euid_access $USER0 $DIR/$tdir/$USER0/testdir_groups/file
 }
@@ -4995,6 +5053,7 @@ test_60() {
 	if [ "$MOUNT_2" ]; then
 		mount_client $MOUNT2 ${MOUNT_OPTS} || error "remount failed"
 	fi
+	wait_ssk
 
 	ls -Rl $DIR || error "ls -Rl $DIR failed (1)"
 
@@ -5008,6 +5067,46 @@ test_60() {
 		error "cat $DIR/$tdir/subdir/subfile1 failed"
 }
 run_test 60 "Subdirmount of encrypted dir"
+
+test_62() {
+	local testdir=$DIR/$tdir/mytestdir
+	local testfile=$DIR/$tdir/$tfile
+
+	[[ $(facet_fstype ost1) == zfs ]] && skip "skip ZFS backend"
+
+	(( $MDS1_VERSION > $(version_code 2.15.51) )) ||
+		skip "Need MDS version at least 2.15.51"
+
+	$LCTL get_param mdc.*.import | grep -q client_encryption ||
+		skip "client encryption not supported"
+
+	mount.lustre --help |& grep -q "test_dummy_encryption:" ||
+		skip "need dummy encryption support"
+
+	stack_trap cleanup_for_enc_tests EXIT
+	setup_for_enc_tests
+
+	lfs setstripe -c -1 $DIR/$tdir
+	touch $DIR/$tdir/${tfile}_1 || error "touch ${tfile}_1 failed"
+	dd if=/dev/zero of=$DIR/$tdir/${tfile}_2 bs=1 count=1 conv=fsync ||
+		error "dd ${tfile}_2 failed"
+
+	# unmount the Lustre filesystem
+	stopall || error "stopping for e2fsck run"
+
+	# run e2fsck on the MDT and OST devices
+	local mds_host=$(facet_active_host $SINGLEMDS)
+	local ost_host=$(facet_active_host ost1)
+	local mds_dev=$(mdsdevname ${SINGLEMDS//mds/})
+	local ost_dev=$(ostdevname 1)
+
+	run_e2fsck $mds_host $mds_dev "-n"
+	run_e2fsck $ost_host $ost_dev "-n"
+
+	# mount the Lustre filesystem
+	setupall || error "remounting the filesystem failed"
+}
+run_test 62 "e2fsck with encrypted files"
 
 log "cleanup: ======================================================"
 

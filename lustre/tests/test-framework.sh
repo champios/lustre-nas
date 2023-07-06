@@ -3829,7 +3829,7 @@ fail() {
 	export SK_NO_KEY=$SK_NO_KEY_save
 	# to initiate all OSC idling connections
 	clients_up
-	wait_clients_import_state "$clients" "$facets" "\(FULL\|IDLE\)"
+	wait_clients_import_ready "$clients" "$facets"
 	clients_up || error "post-failover stat: $?"
 }
 
@@ -7187,20 +7187,23 @@ init_clients_lists () {
     # Sanity check: exclude the dup entries
     RCLIENTS=$(for i in ${rclients//,/ }; do echo $i; done | sort -u)
 
-    clients="$SINGLECLIENT $HOSTNAME $RCLIENTS"
+	export CLIENT1=${CLIENT1:-$HOSTNAME}
+	export SINGLECLIENT=$CLIENT1
+
+	clients="$SINGLECLIENT $HOSTNAME $RCLIENTS"
 
     # Sanity check: exclude the dup entries from CLIENTS
     # for those configs which has SINGLCLIENT set to local client
     clients=$(for i in $clients; do echo $i; done | sort -u)
 
-    CLIENTS=$(comma_list $clients)
+	export CLIENTS=$(comma_list $clients)
     local -a remoteclients=($RCLIENTS)
     for ((i=0; $i<${#remoteclients[@]}; i++)); do
             varname=CLIENT$((i + 2))
-            eval $varname=${remoteclients[i]}
+			eval export $varname=${remoteclients[i]}
     done
 
-    CLIENTCOUNT=$((${#remoteclients[@]} + 1))
+	export CLIENTCOUNT=$((${#remoteclients[@]} + 1))
 }
 
 get_random_entry () {
@@ -7849,6 +7852,10 @@ wait_clients_import_state () {
 		error "import is not in ${expected} state"
 		return 1
 	fi
+}
+
+wait_clients_import_ready() {
+	wait_clients_import_state "$1" "$2" "\(FULL\|IDLE\)"
 }
 
 wait_osp_active() {
@@ -10027,7 +10034,8 @@ is_project_quota_supported() {
 
 	[[ "$(facet_fstype $SINGLEMDS)" == "ldiskfs" &&
 	   $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.9.55) ]] &&
-		do_facet mds1 lfs --help |& grep -q project && return 0
+		do_facet mds1 lfs --list-commands |& grep -q project &&
+			return 0
 
 	[[ "$(facet_fstype $SINGLEMDS)" == "zfs" &&
 	   $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.10.53) ]] &&

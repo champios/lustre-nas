@@ -41,8 +41,8 @@ init_logging
 ALWAYS_EXCEPT="$SANITY_EXCEPT "
 # bug number for skipped test: LU-9693 LU-6493 LU-9693
 ALWAYS_EXCEPT+="               42a     42b     42c "
-# bug number:    LU-8411 LU-9054 LU-14541
-ALWAYS_EXCEPT+=" 407     312     277 "
+# bug number:    LU-8411
+ALWAYS_EXCEPT+=" 407 "
 
 if $SHARED_KEY; then
 	# bug number:    LU-14181 LU-14181
@@ -73,6 +73,13 @@ if (( $LINUX_VERSION_CODE >= $(version_code 4.18.0) &&
       $LINUX_VERSION_CODE <  $(version_code 5.4.0) )); then
 	# bug number:	LU-13063
 	ALWAYS_EXCEPT+=" 411"
+fi
+
+# skip basic ops on file with foreign LOV tests on 5.16.0+ kernels
+# until the filemap_read() issue is fixed
+if (( $LINUX_VERSION_CODE >= $(version_code 5.16.0) )); then
+	# bug number for skipped test: LU-16101
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT  27J"
 fi
 
 #skip ACL tests on RHEL8 and SLES15 until tests changed to use other users
@@ -113,7 +120,7 @@ sles_version_code()
 
 # Check if we are running on Ubuntu or SLES so we can make decisions on
 # what tests to run
-if [ -r /etc/SuSE-release ]; then
+if [ -r /etc/SuSE-release ] || [ -r /etc/SUSE-brand ]; then
 	sles_version=$(sles_version_code)
 	[ $sles_version -lt $(version_code 11.4.0) ] &&
 		# bug number for skipped test: LU-4341
@@ -121,6 +128,10 @@ if [ -r /etc/SuSE-release ]; then
 	[ $sles_version -lt $(version_code 12.0.0) ] &&
 		# bug number for skipped test: LU-3703
 		ALWAYS_EXCEPT="$ALWAYS_EXCEPT  234"
+
+	[ $sles_version -ge $(version_code 15.4.0) ] &&
+		# bug number for skipped test: LU-16101
+		ALWAYS_EXCEPT="$ALWAYS_EXCEPT  27J"
 elif [ -r /etc/os-release ]; then
 	if grep -qi ubuntu /etc/os-release; then
 		ubuntu_version=$(version_code $(sed -n -e 's/"//g' \
@@ -1383,7 +1394,7 @@ test_24B() { # LU-4805
 	local count
 
 	test_mkdir $DIR/$tdir
-	$LFS setdirstripe -i0 -c$MDSCOUNT $DIR/$tdir/striped_dir ||
+	$LFS setdirstripe -i0 -c$MDSCOUNT $DIR/$tdir/striped_dir/ ||
 		error "create striped dir failed"
 
 	count=$(ls -ai $DIR/$tdir/striped_dir | wc -l)
@@ -5072,9 +5083,17 @@ test_39r() {
 	sleep 5
 
 	local ostdev=$(ostdevname 1)
-	local fid=($(lfs getstripe -y $DIR/$tfile |
-			awk '/l_fid:/ { print $2 }' | tr ':' ' '))
-	local objpath="O/0/d$((${fid[1]} % 32))/$((${fid[1]}))"
+	local fid=($($LFS getstripe $DIR/$tfile | grep 0x))
+	local seq=${fid[3]#0x}
+	local oid=${fid[1]}
+	local oid_hex
+
+	if [ $seq == 0 ]; then
+		oid_hex=${fid[1]}
+	else
+		oid_hex=${fid[2]#0x}
+	fi
+	local objpath="O/$seq/d$(($oid % 32))/$oid_hex"
 	local cmd="debugfs -c -R \\\"stat $objpath\\\" $ostdev"
 
 	echo "OST atime: $(do_facet ost1 "$cmd" |& grep atime)"
@@ -24039,15 +24058,18 @@ test_311() {
 }
 run_test 311 "disable OSP precreate, and unlink should destroy objs"
 
-zfs_oid_to_objid()
+zfs_get_objid()
 {
 	local ost=$1
-	local objid=$2
+	local tf=$2
+	local fid=($($LFS getstripe $tf | grep 0x))
+	local seq=${fid[3]#0x}
+	local objid=${fid[1]}
 
 	local vdevdir=$(dirname $(facet_vdevice $ost))
 	local cmd="$ZDB -e -p $vdevdir -ddddd $(facet_device $ost)"
 	local zfs_zapid=$(do_facet $ost $cmd |
-			  grep -w "/O/0/d$((objid%32))" -C 5 |
+			  grep -w "/O/$seq/d$((objid%32))" -C 5 |
 			  awk '/Object/{getline; print $1}')
 	local zfs_objid=$(do_facet $ost $cmd $zfs_zapid |
 			  awk "/$objid = /"'{printf $3}')
@@ -24081,62 +24103,60 @@ test_312() { # LU-4856
 	local max_blksz=$(do_facet ost1 \
 			  $ZFS get -p recordsize $(facet_device ost1) |
 			  awk '!/VALUE/{print $3}')
+	local tf=$DIR/$tfile
 
-	# to make life a little bit easier
-	$LFS mkdir -c 1 -i 0 $DIR/$tdir
-	$LFS setstripe -c 1 -i 0 $DIR/$tdir
-
-	local tf=$DIR/$tdir/$tfile
-	touch $tf
-	local oid=$($LFS getstripe $tf | awk '/obdidx/{getline; print $2}')
+	$LFS setstripe -c1 $tf
+	local facet="ost$(($($LFS getstripe -i $tf) + 1))"
 
 	# Get ZFS object id
-	local zfs_objid=$(zfs_oid_to_objid ost1 $oid)
+	local zfs_objid=$(zfs_get_objid $facet $tf)
 	# block size change by sequential overwrite
 	local bs
 
 	for ((bs=$PAGE_SIZE; bs <= max_blksz; bs *= 4)) ; do
 		dd if=/dev/zero of=$tf bs=$bs count=1 oflag=sync conv=notrunc
 
-		local blksz=$(zfs_object_blksz ost1 $zfs_objid)
-		[ $blksz -eq $bs ] || error "blksz error: $blksz, expected: $bs"
+		local blksz=$(zfs_object_blksz $facet $zfs_objid)
+		[[ $blksz -eq $bs ]] || error "blksz error: $blksz, expected: $bs"
 	done
 	rm -f $tf
 
+	$LFS setstripe -c1 $tf
+	facet="ost$(($($LFS getstripe -i $tf) + 1))"
+
 	# block size change by sequential append write
 	dd if=/dev/zero of=$tf bs=$PAGE_SIZE count=1 oflag=sync conv=notrunc
-	oid=$($LFS getstripe $tf | awk '/obdidx/{getline; print $2}')
-	zfs_objid=$(zfs_oid_to_objid ost1 $oid)
+	zfs_objid=$(zfs_get_objid $facet $tf)
 	local count
 
 	for ((count = 1; count < $((max_blksz / PAGE_SIZE)); count *= 2)); do
 		dd if=/dev/zero of=$tf bs=$PAGE_SIZE count=$count seek=$count \
 			oflag=sync conv=notrunc
 
-		blksz=$(zfs_object_blksz ost1 $zfs_objid)
-		[ $blksz -eq $((2 * count * PAGE_SIZE)) ] ||
+		blksz=$(zfs_object_blksz $facet $zfs_objid)
+		(( $blksz == 2 * count * PAGE_SIZE )) ||
 			error "blksz error, actual $blksz, " \
 				"expected: 2 * $count * $PAGE_SIZE"
 	done
 	rm -f $tf
 
 	# random write
-	touch $tf
-	oid=$($LFS getstripe $tf | awk '/obdidx/{getline; print $2}')
-	zfs_objid=$(zfs_oid_to_objid ost1 $oid)
+	$LFS setstripe -c1 $tf
+	facet="ost$(($($LFS getstripe -i $tf) + 1))"
+	zfs_objid=$(zfs_get_objid $facet $tf)
 
 	dd if=/dev/zero of=$tf bs=1K count=1 oflag=sync conv=notrunc
-	blksz=$(zfs_object_blksz ost1 $zfs_objid)
-	[ $blksz -eq $PAGE_SIZE ] ||
+	blksz=$(zfs_object_blksz $facet $zfs_objid)
+	(( blksz == PAGE_SIZE )) ||
 		error "blksz error: $blksz, expected: $PAGE_SIZE"
 
 	dd if=/dev/zero of=$tf bs=64K count=1 oflag=sync conv=notrunc seek=128
-	blksz=$(zfs_object_blksz ost1 $zfs_objid)
-	[ $blksz -eq 65536 ] || error "blksz error: $blksz, expected: 64k"
+	blksz=$(zfs_object_blksz $facet $zfs_objid)
+	(( blksz == 65536 )) || error "blksz error: $blksz, expected: 64k"
 
 	dd if=/dev/zero of=$tf bs=1M count=1 oflag=sync conv=notrunc
-	blksz=$(zfs_object_blksz ost1 $zfs_objid)
-	[ $blksz -eq 65536 ] || error "rewrite error: $blksz, expected: 64k"
+	blksz=$(zfs_object_blksz $facet $zfs_objid)
+	(( blksz == 65536 )) || error "rewrite error: $blksz, expected: 64k"
 }
 run_test 312 "make sure ZFS adjusts its block size by write pattern"
 
@@ -24351,21 +24371,18 @@ test_398a() { # LU-4198
 	$LFS setstripe -c 1 -i 0 $DIR/$tfile
 	$LCTL set_param ldlm.namespaces.*.lru_size=clear
 
-	# Disabled: DIO does not push out buffered I/O pages, see LU-12587
 	# request a new lock on client
-	#dd if=/dev/zero of=$DIR/$tfile bs=1M count=1
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1
 
-	#dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
-	#local lock_count=$($LCTL get_param -n \
-	#		   ldlm.namespaces.$imp_name.lru_size)
-	#[[ $lock_count -eq 0 ]] || error "lock should be cancelled by direct IO"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
+	local lock_count=$($LCTL get_param -n \
+			   ldlm.namespaces.$imp_name.lru_size)
+	[[ $lock_count -eq 0 ]] || error "lock should be cancelled by direct IO"
 
 	$LCTL set_param ldlm.namespaces.*-OST0000-osc-ffff*.lru_size=clear
 
 	# no lock cached, should use lockless DIO and not enqueue new lock
-	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct \
-		conv=notrunc ||
-		error "dio write failed"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
 	lock_count=$($LCTL get_param -n \
 		     ldlm.namespaces.$imp_name.lru_size)
 	[[ $lock_count -eq 0 ]] || error "no lock should be held by direct IO"
@@ -26870,6 +26887,41 @@ test_432() {
 }
 run_test 432 "mv dir from outside Lustre"
 
+test_434() {
+	local file
+	local getxattr_count
+	local mdc_stat_param="mdc.$FSNAME-MDT0000*.md_stats"
+	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
+
+	[[ $(getenforce) == "Disabled" ]] ||
+		skip "lsm selinux module have to be disabled for this test"
+
+	test_mkdir -i 0 -c1 $DIR/$tdir/ ||
+		error "fail to create $DIR/$tdir/ on MDT0000"
+
+	touch $DIR/$tdir/$tfile-{001..100}
+
+	# disable the xattr cache
+	save_lustre_params client "llite.*.xattr_cache" > $p
+	lctl set_param llite.*.xattr_cache=0
+	stack_trap "restore_lustre_params < $p; rm -f $p" EXIT
+
+	# clear clients mdc stats
+	clear_stats $mdc_stat_param ||
+		error "fail to clear stats on mdc MDT0000"
+
+	for file in $DIR/$tdir/$tfile-{001..100}; do
+		getfattr -n security.selinux $file |&
+			grep -q "Operation not supported" ||
+			error "getxattr on security.selinux should return EOPNOTSUPP"
+	done
+
+	getxattr_count=$(calc_stats $mdc_stat_param "getxattr")
+	(( getxattr_count < 100 )) ||
+		error "client sent $getxattr_count getxattr RPCs to the MDS"
+}
+run_test 434 "Client should not send RPCs for security.selinux with SElinux disabled"
+
 prep_801() {
 	[[ $MDS1_VERSION -lt $(version_code 2.9.55) ]] ||
 	[[ $OST1_VERSION -lt $(version_code 2.9.55) ]] &&
@@ -27519,11 +27571,6 @@ test_807() {
 	local cl_user="${CL_USERS[$SINGLEMDS]%% *}"
 	changelog_users $SINGLEMDS | grep -q $cl_user ||
 		error "User $cl_user not found in changelog_users"
-
-	local save="$TMP/$TESTSUITE-$TESTNAME.parameters"
-	save_lustre_params client "llite.*.xattr_cache" > $save
-	lctl set_param llite.*.xattr_cache=0
-	stack_trap "restore_lustre_params < $save; rm -f $save" EXIT
 
 	rm -rf $DIR/$tdir || error "rm $tdir failed"
 	mkdir_on_mdt0 $DIR/$tdir || error "mkdir $tdir failed"

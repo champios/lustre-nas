@@ -18,8 +18,8 @@ init_test_env $@
 init_logging
 
 ALWAYS_EXCEPT="$SANITYN_EXCEPT "
-# bug number for skipped test:  LU-7105 LU-14541
-ALWAYS_EXCEPT+="                28      16f"
+# bug number for skipped test:  LU-7105
+ALWAYS_EXCEPT+="                28 "
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
 # skip tests for PPC until they are fixed
@@ -564,6 +564,80 @@ test_16f() { # LU-14541
 }
 run_test 16f "rw sequential consistency vs drop_caches"
 
+test_16g() {
+	local file1=$DIR1/$tfile
+	local file2=$DIR2/$tfile
+	local duration=20
+	local status
+
+	timeout --preserve-status --signal=USR1 $duration \
+		rw_seq_cst_vs_drop_caches -m $file1 $file2
+	status=$?
+
+	case $((status & 0x7f)) in
+		0)
+			echo OK # Computers must be fast now.
+			;;
+		6) # SIGABRT
+			error "sequential consistency violation detected"
+			;;
+		10) # SIGUSR1
+			echo TIMEOUT # This is fine.
+			;;
+		*)
+			error "strange status '$status'"
+			;;
+	esac
+
+	rm -f $file1
+}
+run_test 16g "mmap rw sequential consistency vs drop_caches"
+
+test_16i() {
+	local tf=$DIR/$tdir/$tfile
+	local tf2=$DIR2/$tdir/$tfile
+
+	test_mkdir $DIR/$tdir
+
+	# create file and populate data
+	cp /etc/passwd $tf || error "cp failed"
+
+	local size=$(stat -c %s $tf)
+
+	c1=$(dd if=$tf bs=1 2>/dev/null | od -x | tail -q -n4)
+	c2=$(dd if=$tf2 bs=1 2>/dev/null | od -x | tail -q -n4)
+
+	if [[ "$c1" != "$c2" ]]; then
+		echo "  ------- mount 1 read --------"
+		echo $c1
+		echo "  ------- mount 2 read --------"
+		echo $c2
+		error "content mismatch"
+	fi
+
+	echo "  ------- before truncate --------"
+	echo $c1
+
+	# truncate file
+	$TRUNCATE $tf $((size / 2)) || error "truncate file"
+
+	echo "  ------- after truncate --------"
+
+	# repeat the comparison
+	c1=$(dd if=$tf bs=1 2>/dev/null | od -x | tail -q -n4)
+	c2=$(dd if=$tf2 bs=1 2>/dev/null | od -x | tail -q -n4)
+
+	if [[ "$c1" != "$c2" ]]; then
+		echo "  ------- mount 1 read --------"
+		echo $c1
+		echo "  ------- mount 2 read --------"
+		echo $c2
+		error "content mismatch after truncate"
+	fi
+	echo $c2
+}
+run_test 16i "read after truncate file"
+
 test_17() { # bug 3513, 3667
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 
@@ -999,7 +1073,6 @@ print_jbd_stat () {
 test_33a() {
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
 
-	[ -z "$CLIENTS" ] && skip "Need two or more clients, have $CLIENTS"
 	[ $CLIENTCOUNT -lt 2 ] &&
 		skip "Need two or more clients, have $CLIENTCOUNT"
 
@@ -1050,7 +1123,6 @@ run_test 33a "commit on sharing, cross crete/delete, 2 clients, benchmark"
 test_33b() {
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
 
-	[ -n "$CLIENTS" ] || { skip "Need two or more clients" && return 0; }
 	[ $CLIENTCOUNT -ge 2 ] ||
 		{ skip "Need two or more clients, have $CLIENTCOUNT" &&
 								return 0; }
@@ -1206,7 +1278,6 @@ test_33d() {
 run_test 33d "DNE distributed operation should trigger COS"
 
 test_33e() {
-	[ -n "$CLIENTS" ] || skip "Need two or more clients"
 	[ $CLIENTCOUNT -ge 2 ] ||
 		skip "Need two or more clients, have $CLIENTCOUNT"
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
@@ -3383,9 +3454,9 @@ test_55d()
 	mkdir -p $DIR2/$tdir/$tdir || error "(1) mkdir failed"
 
 	# link in reverse locking order
-	ln $DIR2/$tdir/f1 $DIR2/$tdir/$tdir/
+	ln $DIR2/$tdir/f1 $DIR2/$tdir/$tdir/f1 || error "(2) ln failed"
 
-	wait $PID1 && error "(2) mv succeeded"
+	! wait $PID1 || error "(3) mv succeeded"
 	rm -rf $DIR/$tdir
 }
 run_test 55d "rename file vs link"
@@ -5088,6 +5159,37 @@ test_94() {
 	$LCTL set_param osc.*.idle_timeout=debug
 }
 run_test 94 "signal vs CP callback race"
+
+test_95b() {
+	local file=$DIR/$tfile
+	local file2=$DIR2/$tfile
+	local fast_read_save
+	local pid
+
+	fast_read_save=$($LCTL get_param -n llite.*.fast_read | head -n 1)
+	[ -z "$fast_read_save" ] && skip "no fast read support"
+
+	stack_trap "$LCTL set_param llite.*.fast_read=$fast_read_save" EXIT
+	$LCTL set_param llite.*.fast_read=0
+
+	$LFS setstripe -c $OSTCOUNT $file || error "failed to setstripe $file"
+	dd if=/dev/zero of=$file bs=$((PAGE_SIZE * 3)) count=1 ||
+		error "failed to write $file"
+
+	# This does the read from the second mount, so this flushes the pages
+	# the first mount and creates new ones on the second mount
+	# OBD_FAIL_LLITE_READPAGE_PAUSE2	0x1424
+	$LCTL set_param fail_loc=0x80001424 fail_val=5
+	$MULTIOP $file2 or${PAGE_SIZE}c &
+	pid=$!
+
+	sleep 2
+	fadvise_dontneed_helper $file2
+	$LCTL set_param fail_loc=0
+	sleep 4
+	wait $pid || error "failed to read file"
+}
+run_test 95b "Check readpage() on a page that is no longer uptodate"
 
 # Data-on-MDT tests
 test_100a() {

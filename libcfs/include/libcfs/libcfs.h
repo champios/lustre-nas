@@ -44,6 +44,7 @@
 #include <libcfs/linux/linux-mem.h>
 #include <libcfs/linux/linux-time.h>
 #include <libcfs/linux/linux-wait.h>
+#include <libcfs/linux/linux-fortify-string.h>
 
 #include <uapi/linux/lnet/libcfs_ioctl.h>
 #include <libcfs/libcfs_debug.h>
@@ -130,5 +131,13 @@ void libcfs_vfree_atomic(const void *addr);
 #define interval_tree_first rb_first
 #define INTERVAL_TREE_ROOT RB_ROOT
 #endif /* HAVE_INTERVAL_TREE_CACHED */
+
+#ifndef unsafe_memcpy
+#define unsafe_memcpy(to, from, size, reason)	memcpy((to), (from), (size))
+#endif
+
+#define FLEXIBLE_OBJECT \
+	"Struct contains a flexible member, the size of object is checked" \
+	"and can be safely copied in a single memcpy()"
 
 #endif /* _LIBCFS_LIBCFS_H_ */

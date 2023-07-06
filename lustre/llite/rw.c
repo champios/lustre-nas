@@ -1841,11 +1841,12 @@ int ll_readpage(struct file *file, struct page *vmpage)
 {
 	struct inode *inode = file_inode(file);
 	struct cl_object *clob = ll_i2info(inode)->lli_clob;
-	struct ll_cl_context *lcc;
-	const struct lu_env  *env = NULL;
-	struct cl_io   *io = NULL;
-	struct cl_page *page;
 	struct ll_sb_info *sbi = ll_i2sbi(inode);
+	const struct lu_env *env = NULL;
+	struct cl_read_ahead ra = { 0 };
+	struct ll_cl_context *lcc;
+	struct cl_io *io = NULL;
+	struct cl_page *page;
 	int result;
 	ENTRY;
 
@@ -1861,6 +1862,8 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		struct ll_readahead_state *ras = &fd->fd_ras;
 		struct lu_env  *local_env = NULL;
 		struct vvp_page *vpg;
+
+		CDEBUG(D_VFSTRACE, "fast read pgno: %ld\n", vmpage->index);
 
 		result = -ENODATA;
 
@@ -1914,6 +1917,44 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		RETURN(result);
 	}
 
+	if (lcc && lcc->lcc_type != LCC_MMAP) {
+		CDEBUG(D_VFSTRACE, "pgno:%ld, beyond read end_index:%ld\n",
+		       vmpage->index, lcc->lcc_end_index);
+
+		/*
+		 * This handles a kernel bug introduced in kernel 5.12:
+		 * comment: cbd59c48ae2bcadc4a7599c29cf32fd3f9b78251
+		 * ("mm/filemap: use head pages in generic_file_buffered_read")
+		 *
+		 * See above in this function for a full description of the
+		 * bug.  Briefly, the kernel will try to read 1 more page than
+		 * was actually requested *if that page is already in cache*.
+		 *
+		 * Because this page is beyond the boundary of the requested
+		 * read, Lustre does not lock it as part of the read.  This
+		 * means we must check if there is a valid dlmlock on this
+		 * this page and reference it before we attempt to read in the
+		 * page.  If there is not a valid dlmlock, then we are racing
+		 * with dlmlock cancellation and the page is being removed
+		 * from the cache.
+		 *
+		 * That means we should return AOP_TRUNCATED_PAGE, which will
+		 * cause the kernel to retry the read, which should allow the
+		 * page to be removed from cache as the lock is cancelled.
+		 *
+		 * This should never occur except in kernels with the bug
+		 * mentioned above.
+		 */
+		if (vmpage->index >= lcc->lcc_end_index) {
+			result = cl_io_read_ahead(env, io, vmpage->index, &ra);
+			if (result < 0 || vmpage->index > ra.cra_end_idx) {
+				cl_read_ahead_release(env, &ra);
+				unlock_page(vmpage);
+				RETURN(AOP_TRUNCATED_PAGE);
+			}
+		}
+	}
+
 	/**
 	 * Direct read can fall back to buffered read, but DIO is done
 	 * with lockless i/o, and buffered requires LDLM locking, so in
@@ -1925,7 +1966,7 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		unlock_page(vmpage);
 		io->ci_dio_lock = 1;
 		io->ci_need_restart = 1;
-		RETURN(-ENOLCK);
+		GOTO(out, result = -ENOLCK);
 	}
 
 	LASSERT(io->ci_state == CIS_IO_GOING);
@@ -1946,5 +1987,18 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		unlock_page(vmpage);
 		result = PTR_ERR(page);
         }
+
+out:
+	if (ra.cra_release != NULL)
+		cl_read_ahead_release(env, &ra);
+
+	/* this delay gives time for the actual read of the page to finish and
+	 * unlock the page in vvp_page_completion_read before we return to our
+	 * caller and the caller tries to use the page, allowing us to test
+	 * races with the page being unlocked after readpage() but before it's
+	 * used by the caller
+	 */
+	OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_READPAGE_PAUSE2, cfs_fail_val);
+
 	RETURN(result);
 }

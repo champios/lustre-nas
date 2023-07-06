@@ -53,6 +53,8 @@ struct llcrypt_name {
 
 /* Maximum value for the third parameter of llcrypt_operations.set_context(). */
 #define LLCRYPT_SET_CONTEXT_MAX_SIZE	40
+#define LLCRYPT_DIGESTED_CHAR_OLD	'_'
+#define LLCRYPT_DIGESTED_CHAR		'+'
 
 #ifdef CONFIG_LL_ENCRYPTION
 /*
@@ -264,13 +266,6 @@ static inline bool llcrypt_match_name(const struct llcrypt_name *fname,
 		return false;
 	return !memcmp(de_name, fname->disk_name.name, fname->disk_name.len);
 }
-
-/* bio.c */
-extern void llcrypt_decrypt_bio(struct bio *);
-extern void llcrypt_enqueue_decrypt_bio(struct llcrypt_ctx *ctx,
-					struct bio *bio);
-extern int llcrypt_zeroout_range(const struct inode *, pgoff_t, sector_t,
-				 unsigned int);
 
 /* hooks.c */
 extern int llcrypt_file_open(struct inode *inode, struct file *filp);
@@ -521,22 +516,6 @@ static inline bool llcrypt_match_name(const struct llcrypt_name *fname,
 	if (de_name_len != fname->disk_name.len)
 		return false;
 	return !memcmp(de_name, fname->disk_name.name, fname->disk_name.len);
-}
-
-/* bio.c */
-static inline void llcrypt_decrypt_bio(struct bio *bio)
-{
-}
-
-static inline void llcrypt_enqueue_decrypt_bio(struct llcrypt_ctx *ctx,
-					       struct bio *bio)
-{
-}
-
-static inline int llcrypt_zeroout_range(const struct inode *inode, pgoff_t lblk,
-					sector_t pblk, unsigned int len)
-{
-	return -EOPNOTSUPP;
 }
 
 /* hooks.c */

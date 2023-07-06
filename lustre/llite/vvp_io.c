@@ -811,8 +811,11 @@ static int vvp_io_read_start(const struct lu_env *env,
 	loff_t pos = io->u.ci_rd.rd.crw_pos;
 	size_t cnt = io->u.ci_rd.rd.crw_count;
 	size_t tot = vio->vui_tot_count;
+	struct ll_cl_context *lcc;
+	unsigned int seq;
 	int exceed = 0;
 	int result;
+	int total_bytes_read = 0;
 	struct iov_iter iter;
 	pgoff_t page_offset;
 
@@ -876,12 +879,34 @@ static int vvp_io_read_start(const struct lu_env *env,
 	file_accessed(file);
 	LASSERT(vio->vui_iocb->ki_pos == pos);
 	iter = *vio->vui_iter;
-	result = generic_file_read_iter(vio->vui_iocb, &iter);
+
+	lcc = ll_cl_find(inode);
+	lcc->lcc_end_index = DIV_ROUND_UP(pos + iter.count, PAGE_SIZE);
+	CDEBUG(D_VFSTRACE, "count:%ld iocb pos:%lld\n", iter.count, pos);
+
+	/* this seqlock lets us notice if a page has been deleted on this inode
+	 * during the fault process, allowing us to catch an erroneous short
+	 * read or EIO
+	 * See LU-16160
+	 */
+	do {
+		seq = read_seqbegin(&ll_i2info(inode)->lli_page_inv_lock);
+		result = generic_file_read_iter(vio->vui_iocb, &iter);
+		if (result >= 0) {
+			io->ci_nob += result;
+			total_bytes_read += result;
+		}
+	/* if we got a short read or -EIO and we raced with page invalidation,
+	 * retry
+	 */
+	} while (read_seqretry(&ll_i2info(inode)->lli_page_inv_lock, seq) &&
+		 ((result >= 0 && iov_iter_count(&iter) > 0)
+		  || result == -EIO));
+
 out:
 	if (result >= 0) {
-		if (result < cnt)
+		if (total_bytes_read < cnt)
 			io->ci_continue = 0;
-		io->ci_nob += result;
 		result = 0;
 	} else if (result == -EIOCBQUEUED) {
 		io->ci_nob += vio->u.readwrite.vui_read;
@@ -1032,12 +1057,12 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 
 		ClearPageReclaim(page);
 
-		lock_page_memcg(page);
+		vvp_lock_page_memcg(page);
 		if (TestSetPageDirty(page)) {
 			/* page is already dirty .. no extra work needed
 			 * set a flag for the i'th page to be skipped
 			 */
-			unlock_page_memcg(page);
+			vvp_unlock_page_memcg(page);
 			skip_pages |= (1 << i);
 		}
 	}
@@ -1065,7 +1090,7 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 		WARN_ON_ONCE(!PagePrivate(page) && !PageUptodate(page));
 		ll_account_page_dirtied(page, mapping);
 		dirtied++;
-		unlock_page_memcg(page);
+		vvp_unlock_page_memcg(page);
 	}
 	ll_xa_unlock_irqrestore(&mapping->i_pages, flags);
 

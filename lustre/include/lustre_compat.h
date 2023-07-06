@@ -367,9 +367,9 @@ static inline void __user *get_vmf_address(struct vm_fault *vmf)
 }
 
 #ifdef HAVE_VM_OPS_USE_VM_FAULT_ONLY
-# define ll_filemap_fault(vma, vmf) filemap_fault(vmf)
+# define __ll_filemap_fault(vma, vmf) filemap_fault(vmf)
 #else
-# define ll_filemap_fault(vma, vmf) filemap_fault(vma, vmf)
+# define __ll_filemap_fault(vma, vmf) filemap_fault(vma, vmf)
 #endif
 
 #ifndef HAVE_CURRENT_TIME
@@ -430,9 +430,18 @@ static inline struct timespec current_time(struct inode *inode)
 #define ll_xa_unlock_irqrestore(lockp, flags) spin_unlock_irqrestore(lockp, flags)
 #endif
 
-#ifndef HAVE_LOCK_PAGE_MEMCG
-#define lock_page_memcg(page) do {} while (0)
-#define unlock_page_memcg(page) do {} while (0)
+/* Linux commit v5.15-12273-gab2f9d2d3626
+ *   mm: unexport {,un}lock_page_memcg
+ *
+ * Note that the functions are still defined or declared breaking
+ * the simple approach of just defining the missing functions here
+ */
+#ifdef HAVE_LOCK_PAGE_MEMCG
+#define vvp_lock_page_memcg(page)	lock_page_memcg((page))
+#define vvp_unlock_page_memcg(page)	unlock_page_memcg((page))
+#else
+#define vvp_lock_page_memcg(page)
+#define vvp_unlock_page_memcg(page)
 #endif
 
 #ifndef KMEM_CACHE_USERCOPY
@@ -441,9 +450,14 @@ static inline struct timespec current_time(struct inode *inode)
 	kmem_cache_create(name, size, align, flags, ctor)
 #endif
 
-#ifndef HAVE_LINUX_SELINUX_IS_ENABLED
-#define selinux_is_enabled() 1
+static inline bool ll_security_xattr_wanted(struct inode *in)
+{
+#ifdef CONFIG_SECURITY
+	return in->i_security && in->i_sb->s_security;
+#else
+	return false;
 #endif
+}
 
 static inline int ll_vfs_getxattr(struct dentry *dentry, struct inode *inode,
 				  const char *name,
@@ -547,6 +561,33 @@ static inline void ll_security_release_secctx(char *secdata, u32 seclen)
 #define vfs_create(ns, dir, de, mode, ex)	vfs_create(dir, de, mode, ex)
 #define vfs_mkdir(ns, dir, de, mode)		vfs_mkdir(dir, de, mode)
 #define ll_set_acl(ns, inode, acl, type)	ll_set_acl(inode, acl, type)
+#endif
+
+/**
+ * delete_from_page_cache is not exported anymore
+ */
+#ifdef HAVE_DELETE_FROM_PAGE_CACHE
+#define cfs_delete_from_page_cache(page)	delete_from_page_cache((page))
+#else
+static inline void cfs_delete_from_page_cache(struct page *page)
+{
+	if (!page->mapping)
+		return;
+	LASSERT(PageLocked(page));
+	get_page(page);
+	unlock_page(page);
+	/* on entry page is locked */
+	if (S_ISREG(page->mapping->host->i_mode)) {
+		generic_error_remove_page(page->mapping, page);
+	} else {
+		loff_t lstart = page->index << PAGE_SHIFT;
+		loff_t lend = lstart + PAGE_SIZE - 1;
+
+		truncate_inode_pages_range(page->mapping, lstart, lend);
+	}
+	lock_page(page);
+	put_page(page);
+}
 #endif
 
 #endif /* _LUSTRE_COMPAT_H */

@@ -98,6 +98,7 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/pagevec.h>
+#include <libcfs/linux/linux-misc.h>
 #include <lustre_dlm.h>
 
 struct obd_info;
@@ -1068,14 +1069,6 @@ static inline bool __page_in_use(const struct cl_page *page, int refc)
  * Caller doesn't hold a refcount.
  */
 #define cl_page_in_use_noref(pg) __page_in_use(pg, 0)
-
-/* references: cl_page, page cache, optional + refcount for caller reference
- * (always 0 or 1 currently)
- */
-static inline int vmpage_in_use(struct page *vmpage, int refcount)
-{
-	return (page_count(vmpage) - page_mapcount(vmpage) > 2 + refcount);
-}
 
 /** @} cl_page */
 
@@ -2496,13 +2489,7 @@ struct cl_io *cl_io_top(struct cl_io *io);
 void cl_io_print(const struct lu_env *env, void *cookie,
                  lu_printer_t printer, const struct cl_io *io);
 
-#define CL_IO_SLICE_CLEAN(foo_io, base)					\
-do {									\
-	typeof(foo_io) __foo_io = (foo_io);				\
-									\
-	memset(&__foo_io->base, 0,					\
-	       sizeof(*__foo_io) - offsetof(typeof(*__foo_io), base));	\
-} while (0)
+#define CL_IO_SLICE_CLEAN(obj, base) memset_startat(obj, 0, base)
 
 /** @} cl_io */
 

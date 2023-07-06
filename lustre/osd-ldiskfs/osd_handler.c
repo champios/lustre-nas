@@ -123,6 +123,9 @@ static int osd_remote_fid(const struct lu_env *env, struct osd_device *osd,
 			  const struct lu_fid *fid);
 static int osd_process_scheduled_agent_removals(const struct lu_env *env,
 						struct osd_device *osd);
+static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
+			 const struct lu_buf *buf, const char *name, int fl,
+			 struct thandle *handle);
 
 int osd_trans_declare_op2rb[] = {
 	[OSD_OT_ATTR_SET]	= OSD_OT_ATTR_SET,
@@ -2409,37 +2412,52 @@ static void osd_conf_get(const struct lu_env *env,
 		/*
 		 * Expected values:
 		 * T10-DIF-TYPE1-CRC
+		 * T10-DIF-TYPE2-CRC
 		 * T10-DIF-TYPE3-CRC
 		 * T10-DIF-TYPE1-IP
+		 * T10-DIF-TYPE2-IP
 		 * T10-DIF-TYPE3-IP
 		 */
 		if (strncmp(name, "T10-DIF-TYPE",
 			    sizeof("T10-DIF-TYPE") - 1) == 0) {
-			/* also skip "1/3-" at end */
+			/* also skip "1/2/3-" at end */
 			const int type_off = sizeof("T10-DIF-TYPE.");
 			char type_number = name[type_off - 2];
 
 			if (interval != 512 && interval != 4096) {
 				CERROR("%s: unsupported T10PI sector size %u\n",
 				       d->od_svname, interval);
-			} else if (type_number != '1' && type_number != '3') {
+				goto out;
+			}
+			switch (type_number) {
+			case '1':
+				d->od_t10_type = OSD_T10_TYPE1;
+				break;
+			case '2':
+				d->od_t10_type = OSD_T10_TYPE2;
+				break;
+			case '3':
+				d->od_t10_type = OSD_T10_TYPE3;
+				break;
+			default:
 				CERROR("%s: unsupported T10PI type %s\n",
 				       d->od_svname, name);
-			} else if (strcmp(name + type_off, "CRC") == 0) {
-				d->od_t10_type = type_number == '1' ?
-					OSD_T10_TYPE1_CRC : OSD_T10_TYPE3_CRC;
+				goto out;
+			}
+			if (strcmp(name + type_off, "CRC") == 0) {
+				d->od_t10_type |= OSD_T10_TYPE_CRC;
 				param->ddp_t10_cksum_type = interval == 512 ?
 					OBD_CKSUM_T10CRC512 :
 					OBD_CKSUM_T10CRC4K;
 			} else if (strcmp(name + type_off, "IP") == 0) {
-				d->od_t10_type = type_number == '1' ?
-					OSD_T10_TYPE1_IP : OSD_T10_TYPE3_IP;
+				d->od_t10_type |= OSD_T10_TYPE_IP;
 				param->ddp_t10_cksum_type = interval == 512 ?
 					OBD_CKSUM_T10IP512 :
 					OBD_CKSUM_T10IP4K;
 			} else {
 				CERROR("%s: unsupported checksum type of T10PI type '%s'\n",
 				       d->od_svname, name);
+				d->od_t10_type = 0;
 			}
 
 		} else {
@@ -2448,6 +2466,7 @@ static void osd_conf_get(const struct lu_env *env,
 		}
 	}
 
+out:
 	param->ddp_has_lseek_data_hole = true;
 }
 
@@ -3133,7 +3152,9 @@ static int osd_attr_set(const struct lu_env *env,
 			const struct lu_attr *attr,
 			struct thandle *handle)
 {
+	struct osd_thread_info *info = osd_oti_get(env);
 	struct osd_object *obj = osd_dt_obj(dt);
+	struct osd_device *osd = osd_obj2dev(obj);
 	struct inode *inode;
 	int rc;
 
@@ -3192,9 +3213,34 @@ static int osd_attr_set(const struct lu_env *env,
 	if (!(attr->la_valid & LA_FLAGS))
 		GOTO(out, rc);
 
+	/* If setting LUSTRE_ENCRYPT_FL on an OST object, also set a dummy
+	 * enc ctx xattr, with 2 benefits:
+	 * - setting the LL_XATTR_NAME_ENCRYPTION_CONTEXT xattr internally sets
+	 *   the LDISKFS_ENCRYPT_FL flag on the on-disk inode;
+	 * - it makes e2fsprogs happy to see an enc ctx for an inode that has
+	 *   the LDISKFS_ENCRYPT_FL flag
+	 * We do not need the actual encryption context on OST objects, it is
+	 * only stored on MDT inodes, at file creation time.
+	 */
+	if (!(LDISKFS_I(obj->oo_inode)->i_flags & LDISKFS_ENCRYPT_FL) &&
+	    attr->la_flags & LUSTRE_ENCRYPT_FL && osd->od_is_ost &&
+	    !OBD_FAIL_CHECK(OBD_FAIL_LFSCK_NO_ENCFLAG)) {
+		struct lu_buf buf;
+
+		/* use a dummy enc ctx, fine with e2fsprogs */
+		buf.lb_buf = "\xFF";
+		buf.lb_len = 1;
+		rc = osd_xattr_set(env, dt, &buf,
+				   LL_XATTR_NAME_ENCRYPTION_CONTEXT,
+				   0, handle);
+		if (rc)
+			CWARN("%s: set "DFID" enc ctx failed: rc = %d\n",
+			      osd_name(osd), PFID(lu_object_fid(&dt->do_lu)),
+			      rc);
+	}
+
 	/* Let's check if there are extra flags need to be set into LMA */
 	if (attr->la_flags & LUSTRE_LMA_FL_MASKS) {
-		struct osd_thread_info *info = osd_oti_get(env);
 		struct lustre_mdt_attrs *lma = &info->oti_ost_attrs.loa_lma;
 
 		LASSERT(!obj->oo_pfid_in_lma);
@@ -3204,6 +3250,13 @@ static int osd_attr_set(const struct lu_env *env,
 		if (rc)
 			GOTO(out, rc);
 
+		if ((lma->lma_incompat & lustre_to_lma_flags(attr->la_flags)) ==
+		    lustre_to_lma_flags(attr->la_flags))
+			/* if lma incompat already has the flags,
+			 * save a useless call to xattr_set
+			 */
+			GOTO(out, rc = 0);
+
 		lma->lma_incompat |=
 			lustre_to_lma_flags(attr->la_flags);
 		lustre_lma_swab(lma);
@@ -3212,20 +3265,17 @@ static int osd_attr_set(const struct lu_env *env,
 
 		rc = __osd_xattr_set(info, inode, XATTR_NAME_LMA,
 				     lma, sizeof(*lma), XATTR_REPLACE);
-		if (rc != 0) {
-			struct osd_device *osd = osd_obj2dev(obj);
-
+		if (rc != 0)
 			CWARN("%s: set "DFID" lma flags %u failed: rc = %d\n",
 			      osd_name(osd), PFID(lu_object_fid(&dt->do_lu)),
 			      lma->lma_incompat, rc);
-		} else {
+		else
 			obj->oo_lma_flags =
 				attr->la_flags & LUSTRE_LMA_FL_MASKS;
-		}
 		osd_trans_exec_check(env, handle, OSD_OT_XATTR_SET);
 	}
-out:
 
+out:
 	return rc;
 }
 

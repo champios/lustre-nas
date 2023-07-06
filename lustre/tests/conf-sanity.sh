@@ -166,7 +166,7 @@ stop_mgs() {
 start_ost() {
 	echo "start ost1 service on `facet_active_host ost1`"
 	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS "$@" || return 95
-	wait_clients_import_state ${CLIENTS:-$HOSTNAME} ost1 FULL
+	wait_clients_import_ready ${CLIENTS:-$HOSTNAME} ost1
 }
 
 stop_ost() {
@@ -178,7 +178,7 @@ stop_ost() {
 start_ost2() {
 	echo "start ost2 service on `facet_active_host ost2`"
 	start ost2 $(ostdevname 2) $OST_MOUNT_OPTS "$@" || return 92
-	wait_clients_import_state ${CLIENTS:-$HOSTNAME} ost2 FULL
+	wait_clients_import_ready ${CLIENTS:-$HOSTNAME} ost2
 }
 
 stop_ost2() {
@@ -7896,7 +7896,7 @@ test_101b () {
 	sleep 25
 	start_ost
 
-	wait_osc_import_state client ost1 FULL
+	wait_osc_import_ready client ost1
 	touch $dir/$tfile || error "Can't create file"
 
 	cleanup
@@ -8867,8 +8867,8 @@ test_112() {
 
 	mount_client $MOUNT || error "mount client failed"
 	wait_osc_import_state mds1 ost1 FULL
-	wait_osc_import_state client ost1 FULL
-	wait_osc_import_state client ost2 FULL
+	wait_osc_import_ready client ost1
+	wait_osc_import_ready client ost2
 
 	$LFS setstripe -i 0 $DIR/$tfile.0 ||
 		error "problem creating $tfile.0 on OST0000"
@@ -9132,8 +9132,8 @@ test_122a() {
 run_test 122a "Check OST sequence update"
 
 test_122b() {
-	[[ "$OST1_VERSION" -ge $(version_code 2.11.53) ]] ||
-		skip "Need OST version at least 2.11.53"
+	(( OST1_VERSION >= $(version_code 2.14.52) )) ||
+		skip "Need OST version at least 2.14.52"
 	local err
 
 	reformat
@@ -9755,6 +9755,8 @@ run_test 128 "Force using remote logs with --nolocallogs"
 
 test_129()
 {
+	(( MDS1_VERSION >= $(version_code 2.14.57) )) ||
+		skip "Need MDS version at least 2.14.57"
 	stopall
 	start_mds || error "MDS start failed"
 	format_ost 1
@@ -9833,6 +9835,8 @@ test_132() {
 	local err_cnt
 	local err_cnt2
 
+	(( MDS1_VERSION >= $(version_code 2.14.57) )) ||
+		skip "Need MDS version at least 2.14.57"
 	reformat
 	combined_mgs_mds || start_mgs || error "unable to start MGS"
 	start_mdt 1 || error "unable to start mdt1"

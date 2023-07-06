@@ -335,7 +335,7 @@ AC_SUBST(TEST_JOBS)
 
 AC_ARG_VAR([TEST_DIR],
     [location of temporary parallel configure tests (defaults to $PWD/lb2)])
-	TEST_DIR=${TEST_DIR:-$PWD/_lpb}
+	TEST_DIR=${TEST_DIR:-${ac_pwd}/_lpb}
 AC_SUBST(TEST_DIR)
 
 AS_IF([test "x$enable_gss" != xno], [
@@ -977,6 +977,30 @@ key_match, [
 		[struct key_match_data exist])
 ])
 ]) # LC_KEY_MATCH_DATA
+
+#
+# LC_HAVE_BLK_INTEGRITY_ITER
+#
+# Linux commit v3.17-rc5-69-g1859308853b1 replaces
+# struct blk_integrity_exchg with struct blk_integrity_iter
+#
+AC_DEFUN([LC_HAVE_BLK_INTEGRITY_ITER], [
+LB_CHECK_COMPILE([if struct blk_integrity_iter exist],
+blk_integrity_iter, [
+	#ifdef HAVE_LINUX_BLK_INTEGRITY_HEADER
+	# include <linux/blk-integrity.h>
+	#else
+	# include <linux/blkdev.h>
+	#endif
+],[
+	struct blk_integrity_iter iter;
+
+	iter.prot_buf = NULL;
+],[
+	AC_DEFINE(HAVE_BLK_INTEGRITY_ITER, 1,
+		[kernel has struct blk_integrity_iter])
+])
+]) # LC_HAVE_BLK_INTEGRITY_ITER
 
 #
 # LC_NFS_FILLDIR_USE_CTX
@@ -1636,7 +1660,9 @@ EXTRA_KCFLAGS="$tmp_flags"
 #
 # LC_LOCK_PAGE_MEMCG
 #
-# Kernel version 4.6 adds lock_page_memcg
+# Kernel version 4.6 adds lock_page_memcg(page)
+# Linux commit v5.15-12273-gab2f9d2d3626
+#   mm: unexport {,un}lock_page_memcg
 #
 AC_DEFUN([LC_LOCK_PAGE_MEMCG], [
 LB_CHECK_COMPILE([if 'lock_page_memcg' is defined],
@@ -2411,28 +2437,6 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_SUNRPC_CACHE_HASH_LOCK_IS_A_SPINLOCK
 
 #
-# LC_HAS_LINUX_SELINUX_ENABLED
-#
-# kernel 5.1 commit 3d252529480c68bfd6a6774652df7c8968b28e41
-# SELinux: Remove unused selinux_is_enabled
-#
-AC_DEFUN([LC_HAS_LINUX_SELINUX_ENABLED], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if linux/selinux.h exists],
-selinux_is_enabled, [
-	#include <linux/selinux.h>
-],[
-	bool has_selinux = selinux_is_enabled();
-	(void)has_selinux;
-],[
-	AC_DEFINE(HAVE_LINUX_SELINUX_IS_ENABLED, 1,
-		[if linux/selinux.h exists])
-])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_HAS_LINUX_SELINUX_ENABLED
-
-#
 # LB_HAVE_BVEC_ITER_ALL
 #
 # kernel 5.1 commit 6dc4f100c175dd0511ae8674786e7c9006cdfbfa
@@ -2745,8 +2749,19 @@ kiocb_ki_complete_2args, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_KIOCB_COMPLETE_2ARGS
 
-AC_DEFUN([LC_PROG_LINUX_SRC], [])
-AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
+#
+# LC_EXPORTS_DELETE_FROM_PAGE_CACHE
+#
+# Linux commit v5.16-rc4-44-g452e9e6992fe
+# filemap: Add filemap_remove_folio and __filemap_remove_folio
+#
+# Also removes the export of delete_from_page_cache
+#
+AC_DEFUN([LC_EXPORTS_DELETE_FROM_PAGE_CACHE], [
+LB_CHECK_EXPORT([delete_from_page_cache], [mm/filemap.c],
+	[AC_DEFINE(HAVE_DELETE_FROM_PAGE_CACHE, 1,
+			[delete_from_page_cache is exported])])
+]) # LC_EXPORTS_DELETE_FROM_PAGE_CACHE
 
 #
 # LC_HAVE_INVALIDATE_FOLIO
@@ -2796,6 +2811,33 @@ address_spaace_operaions_dirty_folio, [
 	])
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DIRTY_FOLIO
+
+#
+# LC_HAVE_ALLOC_INODE_SB
+#
+# linux commit v5.17-49-g8b9f3ac5b01d
+#   fs: introduce alloc_inode_sb() to allocate filesystems specific inode
+#
+AC_DEFUN([LC_HAVE_ALLOC_INODE_SB], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if alloc_inode_sb() exists],
+alloc_inode_sb, [
+		#include <linux/fs.h>
+	],[
+		struct super_block *sb = NULL;
+		struct kmem_cache *cache = NULL;
+
+		(void)alloc_inode_sb(sb, cache, GFP_NOFS);
+	],[
+		AC_DEFINE(HAVE_ALLOC_INODE_SB, 1,
+			[alloc_inode_sb() exists])
+	])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_ALLOC_INODE_SB
+
+AC_DEFUN([LC_PROG_LINUX_SRC], [])
+AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
 
 #
 # LC_PROG_LINUX
@@ -2855,6 +2897,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 3.17
 	LC_HAVE_INTERVAL_BLK_INTEGRITY
 	LC_KEY_MATCH_DATA
+	LC_HAVE_BLK_INTEGRITY_ITER
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
@@ -2969,7 +3012,6 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_SUNRPC_CACHE_HASH_LOCK_IS_A_SPINLOCK
 
 	# 5.1
-	LC_HAS_LINUX_SELINUX_ENABLED
 	LB_HAVE_BVEC_ITER_ALL
 
 	# 5.2
@@ -3001,10 +3043,14 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 5.16
 	LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
 	LC_HAVE_KIOCB_COMPLETE_2ARGS
+	LC_EXPORTS_DELETE_FROM_PAGE_CACHE
 
-	# 5.18
+	# 5.17
 	LC_HAVE_INVALIDATE_FOLIO
 	LC_HAVE_DIRTY_FOLIO
+
+	# 5.18
+	LC_HAVE_ALLOC_INODE_SB
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
@@ -3385,7 +3431,10 @@ lustre/doc/Makefile
 lustre/include/Makefile
 lustre/include/lustre/Makefile
 lustre/include/uapi/linux/lustre/Makefile
+lustre/kernel_patches/targets/5.14-rhel9.2.target
+lustre/kernel_patches/targets/5.14-rhel9.1.target
 lustre/kernel_patches/targets/5.14-rhel9.0.target
+lustre/kernel_patches/targets/4.18-rhel8.8.target
 lustre/kernel_patches/targets/4.18-rhel8.7.target
 lustre/kernel_patches/targets/4.18-rhel8.6.target
 lustre/kernel_patches/targets/4.18-rhel8.5.target
