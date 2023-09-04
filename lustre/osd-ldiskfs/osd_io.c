@@ -2261,13 +2261,21 @@ static int osd_declare_fallocate(const struct lu_env *env,
 	LASSERT(th);
 	LASSERT(inode);
 
+	/*
+	 * both hole punch and allocation may need few transactions
+	 * to complete, so we have to avoid concurrent writes/truncates
+	 * as we can't release object lock from within ldiskfs.
+	 * notice locking order: transaction start, then lock object.
+	 */
+	rc = osd_trunc_lock(osd_dt_obj(dt), oh, false);
+	if (rc)
+		RETURN(rc);
+
 	if (mode & FALLOC_FL_PUNCH_HOLE) {
 		rc = osd_declare_inode_qid(env, i_uid_read(inode),
 					   i_gid_read(inode),
 					   i_projid_read(inode), 0, oh,
 					   osd_dt_obj(dt), NULL, OSD_QID_BLK);
-		if (rc == 0)
-			rc = osd_trunc_lock(osd_dt_obj(dt), oh, false);
 		RETURN(rc);
 	}
 
