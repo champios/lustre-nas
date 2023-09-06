@@ -764,6 +764,7 @@ int ofd_object_fallocate(const struct lu_env *env, struct ofd_object *fo,
 	struct dt_object *dob = ofd_object_child(fo);
 	struct thandle *th;
 	struct filter_fid *ff = &info->fti_mds_fid;
+	struct range_lock *range = &ofd_info(env)->fti_write_range;
 	bool ff_needed = false;
 	int rc;
 
@@ -785,9 +786,12 @@ int ofd_object_fallocate(const struct lu_env *env, struct ofd_object *fo,
 			RETURN(rc);
 	}
 
+	range_lock_init(range, start, end);
+	range_lock(&fo->ofo_write_tree, range);
+
 	th = ofd_trans_create(env, ofd);
 	if (IS_ERR(th))
-		RETURN(PTR_ERR(th));
+		GOTO(range_unlock, rc = PTR_ERR(th));
 
 	rc = dt_declare_attr_set(env, dob, la, th);
 	if (rc)
@@ -827,6 +831,9 @@ unlock:
 	ofd_read_unlock(env, fo);
 stop:
 	ofd_trans_stop(env, ofd, th, rc);
+range_unlock:
+	range_unlock(&fo->ofo_write_tree, range);
+	info->fti_range_locked = 0;
 	RETURN(rc);
 }
 
